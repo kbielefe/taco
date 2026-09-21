@@ -163,7 +163,7 @@ function weighIns(observations: WeightObservation[]): WeighIn[] {
   return samples;
 }
 
-function observationWeightKg(observation: WeightObservation): number | undefined {
+export function observationWeightKg(observation: WeightObservation): number | undefined {
   const kindIsWeight = /\bweight\b/i.test(observation.kindLabel);
   const candidates = observation.fields.filter((field) => {
     if (field.type !== "number" || !massFactor(field.unit)) {
