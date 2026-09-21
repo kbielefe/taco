@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { stream } from "hono/streaming";
 import { FoodLogAiError, FoodLogConfigError, FoodLogMatchError } from "../log/errors.js";
 import type { FoodLogger } from "../log/logger.js";
 import { sumMacros } from "../log/nutrients.js";
@@ -54,16 +55,41 @@ export function createApp(logger: FoodLogger): Hono {
     const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
     const query = typeof record.query === "string" ? record.query : "";
     const eatenAt = typeof record.eatenAt === "string" ? parseIsoDate(record.eatenAt) : undefined;
-    try {
-      const entry = await logger.log(query, eatenAt ? { eatenAt } : {});
-      return c.json(serializeMeal(entry), 201);
-    } catch (error) {
-      const mapped = publicErrorMessage(error);
-      if (mapped.status === 500) {
-        throw error;
+    const logOptions = eatenAt ? { eatenAt } : {};
+
+    if (!wantsProgressStream(c.req.header("accept"))) {
+      try {
+        const entry = await logger.log(query, logOptions);
+        return c.json(serializeMeal(entry), 201);
+      } catch (error) {
+        const mapped = publicErrorMessage(error);
+        if (mapped.status === 500) {
+          throw error;
+        }
+        return c.json({ error: { message: mapped.message } }, mapped.status);
       }
-      return c.json({ error: { message: mapped.message } }, mapped.status);
     }
+
+    c.header("Content-Type", "application/x-ndjson; charset=utf-8");
+    c.header("Cache-Control", "no-cache");
+    c.header("X-Accel-Buffering", "no");
+    return stream(c, async (out) => {
+      try {
+        const entry = await logger.log(query, {
+          ...logOptions,
+          onProgress: async (message) => {
+            await out.writeln(JSON.stringify({ type: "progress", message }));
+          },
+        });
+        await out.writeln(JSON.stringify({ type: "result", meal: serializeMeal(entry) }));
+      } catch (error) {
+        const mapped = publicErrorMessage(error);
+        if (mapped.status === 500) {
+          console.error(error);
+        }
+        await out.writeln(JSON.stringify({ type: "error", error: { message: mapped.message }, status: mapped.status }));
+      }
+    });
   });
 
   app.delete("/api/meals/:id", async (c) => {
@@ -80,4 +106,8 @@ export function createApp(logger: FoodLogger): Hono {
   });
 
   return app;
+}
+
+function wantsProgressStream(accept: string | undefined): boolean {
+  return (accept ?? "").includes("application/x-ndjson");
 }

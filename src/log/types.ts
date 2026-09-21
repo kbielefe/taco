@@ -101,7 +101,10 @@ export interface FoodStore {
   deleteById(id: string): Promise<boolean>;
 }
 
+export type FoodLogProgress = (message: string) => void | Promise<void>;
+
 export interface LogFoodOptions {
   eatenAt?: Date;
   skipCache?: boolean;
+  onProgress?: FoodLogProgress;
 }

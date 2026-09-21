@@ -1,7 +1,7 @@
 import { MongoClient } from "mongodb";
 import { MongoCacheStore, type CacheStore } from "../fdc/cache.js";
 import { FdcClient } from "../fdc/client.js";
-import type { FoodItem, SearchResultFood } from "../fdc/types.js";
+import type { FoodItem, SearchFoodsOptions, SearchResultFood } from "../fdc/types.js";
 import { XaiFoodLogAi } from "./ai.js";
 import { FoodLogAiError, FoodLogConfigError, FoodLogMatchError } from "./errors.js";
 import { candidateIds, clampGrams, compactSearchCandidate, fusedSearchFoods } from "./match.js";
@@ -19,6 +19,7 @@ import {
   type FoodLogAi,
   type FoodLogEntry,
   type FoodLogItem,
+  type FoodLogProgress,
   type FoodLogResolution,
   type FoodLogSuggestion,
   type FoodStore,
@@ -72,7 +73,8 @@ export class FoodLogger {
     if (trimmed === "") {
       throw new FoodLogConfigError("food log query is required");
     }
-    const resolution = await this.resolve(trimmed, options.skipCache === true);
+    const resolution = await this.resolve(trimmed, options);
+    await report(options.onProgress, "Saving meal.");
     const now = new Date();
     return this.foodStore.insert({
       eatenAt: options.eatenAt ?? now,
@@ -128,11 +130,14 @@ export class FoodLogger {
     }
   }
 
-  private async resolve(query: string, skipCache: boolean): Promise<FoodLogResolution> {
+  private async resolve(query: string, options: LogFoodOptions): Promise<FoodLogResolution> {
+    const skipCache = options.skipCache === true;
+    const onProgress = options.onProgress;
     const key = queryCacheKey(query);
     if (!skipCache) {
       const cached = await this.queryCache.get<FoodLogResolution>(key);
       if (cached) {
+        await report(onProgress, "Using a previous match.");
         return cached;
       }
       const existing = this.inflight.get(key);
@@ -141,7 +146,7 @@ export class FoodLogger {
       }
     }
 
-    const pending = this.resolveFresh(query)
+    const pending = this.resolveFresh(query, onProgress)
       .then(async (value) => {
         await this.queryCache.set(key, cacheResolution(query, value), QUERY_CACHE_TTL_MS);
         return value;
@@ -156,12 +161,67 @@ export class FoodLogger {
     return pending;
   }
 
-  private async resolveFresh(query: string): Promise<FoodLogResolution> {
+  private async resolveFresh(query: string, onProgress?: FoodLogProgress): Promise<FoodLogResolution> {
+    await report(onProgress, "Parsing meal.");
     const parsed = await this.ai.parseQuery(query);
     if (parsed.items.length === 0) {
       throw new FoodLogAiError("Model returned no food items");
     }
-    const items = await Promise.all(parsed.items.map((item) => this.resolveItem(query, item)));
+
+    const searchCount = parsed.items.reduce((count, item) => count + searchCallsForItem(item).length, 0);
+    await report(onProgress, searchCount === 1 ? "Running 1 FDC search." : `Running ${searchCount} FDC searches.`);
+
+    const searched = await Promise.all(
+      parsed.items.map(async (item) => {
+        const foods = await this.searchItem(item);
+        if (foods.length === 0) {
+          throw new FoodLogMatchError(`No FDC match for "${item.name}"`, {
+            query: searchQueriesForItem(item).join(", "),
+            candidates: [],
+          });
+        }
+        return { item, foods };
+      }),
+    );
+
+    await report(onProgress, searched.length === 1 ? "Picking a match." : `Picking ${searched.length} matches.`);
+
+    const matched = await Promise.all(
+      searched.map(async ({ item, foods }) => {
+        const candidates = foods.map((food) => compactSearchCandidate(food, item.quantity));
+        const selected = await this.ai.selectMatch({ mealQuery: query, item, candidates });
+        if (!candidateIds(candidates).has(selected.fdcId)) {
+          throw new FoodLogAiError(
+            `Model selected FDC ${selected.fdcId} which was not in the candidate list for "${item.name}"`,
+          );
+        }
+        return { item, foods, selected };
+      }),
+    );
+
+    await report(
+      onProgress,
+      matched.length === 1 ? "Loading nutrition." : `Loading nutrition for ${matched.length} foods.`,
+    );
+
+    const items = await Promise.all(
+      matched.map(async ({ item, foods, selected }) => {
+        const food = await this.fdc.getFood(selected.fdcId);
+        const grams = clampGrams(selected.grams);
+        const searchHit = foods.find((candidate) => candidate.fdcId === food.fdcId);
+        const macros = await this.macrosForItem(food, grams, searchHit, onProgress);
+        return {
+          name: item.name,
+          fdcId: food.fdcId,
+          description: food.description,
+          dataType: food.dataType,
+          grams,
+          servingDescription: selected.servingDescription,
+          macros,
+        } satisfies FoodLogItem;
+      }),
+    );
+
     return {
       description: items.map((item) => `${item.name} (${item.servingDescription})`).join(" and "),
       macros: sumMacros(items.map((item) => item.macros)),
@@ -169,39 +229,12 @@ export class FoodLogger {
     };
   }
 
-  private async resolveItem(mealQuery: string, item: ParsedFoodItem): Promise<FoodLogItem> {
-    const foods = await this.searchItem(item);
-    if (foods.length === 0) {
-      throw new FoodLogMatchError(`No FDC match for "${item.name}"`, {
-        query: searchQueriesForItem(item).join(", "),
-        candidates: [],
-      });
-    }
-
-    const candidates = foods.map((food) => compactSearchCandidate(food, item.quantity));
-    const selected = await this.ai.selectMatch({ mealQuery, item, candidates });
-    if (!candidateIds(candidates).has(selected.fdcId)) {
-      throw new FoodLogAiError(
-        `Model selected FDC ${selected.fdcId} which was not in the candidate list for "${item.name}"`,
-      );
-    }
-
-    const food = await this.fdc.getFood(selected.fdcId);
-    const grams = clampGrams(selected.grams);
-    const searchHit = foods.find((candidate) => candidate.fdcId === food.fdcId);
-    const macros = await this.macrosForItem(food, grams, searchHit);
-    return {
-      name: item.name,
-      fdcId: food.fdcId,
-      description: food.description,
-      dataType: food.dataType,
-      grams,
-      servingDescription: selected.servingDescription,
-      macros,
-    };
-  }
-
-  private async macrosForItem(food: FoodItem, grams: number, searchHit?: SearchResultFood) {
+  private async macrosForItem(
+    food: FoodItem,
+    grams: number,
+    searchHit: SearchResultFood | undefined,
+    onProgress?: FoodLogProgress,
+  ) {
     const fromDetail = tryMacrosForGrams(food, grams);
     if (fromDetail) {
       return fromDetail;
@@ -212,33 +245,41 @@ export class FoodLogger {
         return fromSearch;
       }
     }
+    await report(onProgress, "Loading extra nutrition details.");
     const abridged = await this.fdc.getFood(food.fdcId, { format: "abridged" });
     return macrosForGrams({ ...food, foodNutrients: abridged.foodNutrients }, grams);
   }
 
   private async searchItem(item: ParsedFoodItem) {
-    const queries = searchQueriesForItem(item);
-    const searches = queries.flatMap((query) => {
-      const unfiltered = this.fdc.searchFoods({ query, pageSize: SEARCH_PAGE_SIZE });
-      if (!item.brandOwner && !item.dataTypes) {
-        return [unfiltered];
-      }
-      return [
-        unfiltered,
-        this.fdc.searchFoods({
-          query,
-          brandOwner: item.brandOwner,
-          dataType: item.dataTypes,
-          pageSize: SEARCH_PAGE_SIZE,
-        }),
-      ];
-    });
-    const results = await Promise.all(searches);
+    const results = await Promise.all(searchCallsForItem(item).map((options) => this.fdc.searchFoods(options)));
     return fusedSearchFoods(
       results.map((result) => result.foods ?? []),
       item,
     );
   }
+}
+
+function searchCallsForItem(item: ParsedFoodItem): SearchFoodsOptions[] {
+  const queries = searchQueriesForItem(item);
+  return queries.flatMap((query) => {
+    const unfiltered: SearchFoodsOptions = { query, pageSize: SEARCH_PAGE_SIZE };
+    if (!item.brandOwner && !item.dataTypes) {
+      return [unfiltered];
+    }
+    return [
+      unfiltered,
+      {
+        query,
+        brandOwner: item.brandOwner,
+        dataType: item.dataTypes,
+        pageSize: SEARCH_PAGE_SIZE,
+      },
+    ];
+  });
+}
+
+async function report(onProgress: FoodLogProgress | undefined, message: string): Promise<void> {
+  await onProgress?.(message);
 }
 
 export async function createFoodLogger(options: CreateFoodLoggerOptions = {}): Promise<FoodLogger> {

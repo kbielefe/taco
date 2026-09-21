@@ -60,6 +60,7 @@ export type {
   FoodLogResolution,
   FoodLogSuggestion,
   FoodStore,
+  FoodLogProgress,
   LogFoodOptions,
   MatchCandidate,
   ParsedFoodItem,

@@ -145,4 +145,60 @@ describe("food log HTTP API", () => {
     const res = await app.request("/api/meals");
     expect(res.status).toBe(400);
   });
+
+  it("streams progress lines then the meal as NDJSON", async () => {
+    const { app } = testApp();
+    const res = await app.request("/api/meals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
+      body: JSON.stringify({ query: "banana" }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/ndjson/);
+    const events = (await res.text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { type: string; message?: string; meal?: { query: string } });
+    expect(events.map((event) => event.type)).toEqual([
+      "progress",
+      "progress",
+      "progress",
+      "progress",
+      "progress",
+      "result",
+    ]);
+    expect(events[1]).toEqual({ type: "progress", message: "Running 1 FDC search." });
+    expect(events.at(-1)).toMatchObject({ type: "result", meal: { query: "banana" } });
+  });
+
+  it("streams a match error as an NDJSON error event", async () => {
+    const logger = new FoodLogger({
+      fdc: {
+        searchFoods: vi.fn(async () => ({ foods: [] })),
+        getFood: vi.fn(async () => details(1, "x", 1)),
+      },
+      ai: mockAi({ items: [{ name: "mystery", searchQueries: ["mystery"], servingHint: "1 bowl", quantity: 1 }] }, {
+        fdcId: 1,
+        grams: 100,
+        servingDescription: "1 bowl",
+      }),
+      queryCache: new MemoryCacheStore(),
+      foodStore: new MemoryFoodStore(),
+    });
+    const app = createApp(logger);
+    const res = await app.request("/api/meals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
+      body: JSON.stringify({ query: "mystery stew" }),
+    });
+    expect(res.status).toBe(200);
+    const events = (await res.text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { type: string; status?: number; error?: { message: string } });
+    const last = events.at(-1);
+    expect(last?.type).toBe("error");
+    expect(last?.status).toBe(422);
+    expect(last?.error?.message).toMatch(/simpler description/i);
+  });
 });

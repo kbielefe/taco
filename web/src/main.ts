@@ -114,7 +114,11 @@ nodes.form.addEventListener("submit", async (event) => {
   combobox.close();
   setBusy(true);
   try {
-    const meal = await logMeal(query);
+    const meal = await logMeal(query, {
+      onProgress: (message) => {
+        nodes.statusEl.textContent = message;
+      },
+    });
     meals = [meal, ...meals.filter((item) => item.id !== meal.id)];
     paintList();
     nodes.input.value = "";

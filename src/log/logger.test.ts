@@ -156,11 +156,48 @@ describe("FoodLogger", () => {
       foodStore,
     });
 
-    const entry = await logger.log("coke zero");
+    const messages: string[] = [];
+    const entry = await logger.log("coke zero", { onProgress: (message) => messages.push(message) });
     expect(entry.macros).toEqual({ caloriesKcal: 0, proteinG: 0, fatG: 0, carbG: 0, fiberG: 0 });
+    expect(messages).not.toContain("Loading extra nutrition details.");
     expect(entry.items[0]?.fdcId).toBe(2742717);
     expect(foodStore.entries).toHaveLength(1);
     expect(fdc.getFood).toHaveBeenCalledOnce();
+  });
+
+  it("reports extra nutrition details when the food payload needs an abridged fetch", async () => {
+    const searchHit = jsonFood({ fdcId: 1, description: "GDSN drink", dataType: "Branded" });
+    const gdsn = {
+      fdcId: 1,
+      dataType: "Branded",
+      description: "GDSN drink",
+      foodNutrients: [{ type: "FoodNutrient", id: 1, amount: 0 }],
+      labelNutrients: {},
+    } as FoodItem;
+    const logger = new FoodLogger({
+      fdc: {
+        searchFoods: vi.fn(async () => ({ foods: [searchHit] })),
+        getFood: vi.fn(async (_id, options) => (options?.format === "abridged" ? details(1, "GDSN drink", 0, 0, 0, 0, 0) : gdsn)),
+      },
+      ai: mockAi(meal([{ name: "drink", searchQueries: ["drink"], servingHint: "1 can", quantity: 1 }]), {
+        fdcId: 1,
+        grams: 355,
+        servingDescription: "1 can",
+      }),
+      queryCache: new MemoryCacheStore(),
+      foodStore: new MemoryFoodStore(),
+    });
+
+    const messages: string[] = [];
+    await logger.log("drink", { onProgress: (message) => messages.push(message) });
+    expect(messages).toEqual([
+      "Parsing meal.",
+      "Running 1 FDC search.",
+      "Picking a match.",
+      "Loading nutrition.",
+      "Loading extra nutrition details.",
+      "Saving meal.",
+    ]);
   });
 
   it("does not insert when FDC has no match", async () => {
@@ -279,6 +316,70 @@ describe("FoodLogger", () => {
     await logger.log("banana");
     await logger.log("banana", { skipCache: true });
     expect(ai.parseQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports high-level progress for a cache miss and a later cache hit", async () => {
+    const banana = jsonFood({ fdcId: 1, description: "Bananas, raw" });
+    const logger = new FoodLogger({
+      fdc: mockFdc([banana], { 1: details(1, "Bananas, raw", 89) }),
+      ai: mockAi(meal([{ name: "banana", searchQueries: ["banana"], servingHint: "1 banana", quantity: 1 }]), {
+        fdcId: 1,
+        grams: 118,
+        servingDescription: "1 banana",
+      }),
+      queryCache: new MemoryCacheStore(),
+      foodStore: new MemoryFoodStore(),
+    });
+
+    const miss: string[] = [];
+    await logger.log("banana", { onProgress: (message) => miss.push(message) });
+    expect(miss).toEqual([
+      "Parsing meal.",
+      "Running 1 FDC search.",
+      "Picking a match.",
+      "Loading nutrition.",
+      "Saving meal.",
+    ]);
+
+    const hit: string[] = [];
+    await logger.log("banana", { onProgress: (message) => hit.push(message) });
+    expect(hit).toEqual(["Using a previous match.", "Saving meal."]);
+  });
+
+  it("counts every FDC search and match in progress updates", async () => {
+    const cheerios = jsonFood({ fdcId: 10, description: "CHEERIOS", dataType: "Branded", servingSize: 28, servingSizeUnit: "g" });
+    const milk = jsonFood({ fdcId: 20, description: "Milk, 2%", dataType: "Foundation" });
+    const logger = new FoodLogger({
+      fdc: mockFdc(
+        (query) => (query.toLowerCase().includes("cheerios") ? [cheerios] : [milk]),
+        {
+          10: details(10, "CHEERIOS", 100, 3, 2, 20, 3),
+          20: details(20, "Milk, 2%", 50, 3.3, 2, 5, 0),
+        },
+      ),
+      ai: mockAi(
+        meal([
+          { name: "Cheerios", searchQueries: ["Cheerios"], servingHint: "1 cup cereal", quantity: 1 },
+          { name: "milk", searchQueries: ["2% milk"], servingHint: "1 cup milk", quantity: 1 },
+        ]),
+        (input) =>
+          input.item.name === "Cheerios"
+            ? { fdcId: 10, grams: 28, servingDescription: "1 cup" }
+            : { fdcId: 20, grams: 244, servingDescription: "1 cup" },
+      ),
+      queryCache: new MemoryCacheStore(),
+      foodStore: new MemoryFoodStore(),
+    });
+
+    const messages: string[] = [];
+    await logger.log("Cheerios and milk", { onProgress: (message) => messages.push(message) });
+    expect(messages).toEqual([
+      "Parsing meal.",
+      "Running 3 FDC searches.",
+      "Picking 2 matches.",
+      "Loading nutrition for 2 foods.",
+      "Saving meal.",
+    ]);
   });
 
   it("lists and deletes stored meals", async () => {
