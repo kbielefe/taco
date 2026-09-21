@@ -110,6 +110,59 @@ describe("FoodLogger", () => {
     expect(suggestions[0]?.query).toBe("Cheerios and milk");
   });
 
+  it("logs a branded drink when getFood omits nutrient identity", async () => {
+    const searchHit = jsonFood({
+      fdcId: 2742717,
+      description: "Coca-Cola Zero Sugar Can, 12 fl oz",
+      dataType: "Branded",
+      servingSize: 355,
+      servingSizeUnit: "MLT",
+      foodNutrients: [
+        { nutrientId: 1008, nutrientNumber: "208", nutrientName: "Energy", unitName: "KCAL", value: 0 },
+        { nutrientId: 1003, nutrientNumber: "203", nutrientName: "Protein", unitName: "G", value: 0 },
+        { nutrientId: 1004, nutrientNumber: "204", nutrientName: "Total lipid (fat)", unitName: "G", value: 0 },
+        { nutrientId: 1005, nutrientNumber: "205", nutrientName: "Carbohydrate, by difference", unitName: "G", value: 0 },
+      ],
+    });
+    const gdsnDetails = {
+      fdcId: 2742717,
+      dataType: "Branded",
+      description: "Coca-Cola Zero Sugar Can, 12 fl oz",
+      servingSize: 355,
+      servingSizeUnit: "MLT",
+      foodNutrients: [
+        { type: "FoodNutrient", id: 34890924, amount: 0 },
+        { type: "FoodNutrient", id: 34890931, amount: 11 },
+      ],
+      labelNutrients: {},
+    } as FoodItem;
+    const ai = mockAi(
+      meal([
+        {
+          name: "Coke Zero",
+          searchQuery: "Coca-Cola Zero Sugar",
+          servingHint: "1 can",
+          quantity: 1,
+        },
+      ]),
+      { fdcId: 2742717, grams: 355, servingDescription: "1 can" },
+    );
+    const fdc = mockFdc([searchHit], { 2742717: gdsnDetails });
+    const foodStore = new MemoryFoodStore();
+    const logger = new FoodLogger({
+      fdc,
+      ai,
+      queryCache: new MemoryCacheStore(),
+      foodStore,
+    });
+
+    const entry = await logger.log("coke zero");
+    expect(entry.macros).toEqual({ caloriesKcal: 0, proteinG: 0, fatG: 0, carbG: 0, fiberG: 0 });
+    expect(entry.items[0]?.fdcId).toBe(2742717);
+    expect(foodStore.entries).toHaveLength(1);
+    expect(fdc.getFood).toHaveBeenCalledOnce();
+  });
+
   it("does not insert when FDC has no match", async () => {
     const ai = mockAi(
       meal([{ name: "mystery stew", searchQuery: "mystery stew", servingHint: "1 bowl", quantity: 1 }]),
@@ -124,6 +177,60 @@ describe("FoodLogger", () => {
     expect(foodStore.entries).toHaveLength(0);
     expect(await queryCache.get("food-log:v1:query:mystery stew")).toBeUndefined();
     expect(ai.selectMatch).not.toHaveBeenCalled();
+  });
+
+  it("merges fallbackQuery hits when the primary search returns the wrong foods", async () => {
+    const dietCoke = jsonFood({ fdcId: 2742339, description: "Diet Coke Bottle, 1.25 Liters", dataType: "Branded" });
+    const cokeZero = jsonFood({
+      fdcId: 2742717,
+      description: "Coca-Cola Zero Sugar Can, 12 fl oz",
+      dataType: "Branded",
+      foodNutrients: [
+        { nutrientId: 1008, nutrientNumber: "208", nutrientName: "Energy", unitName: "KCAL", value: 0 },
+        { nutrientId: 1003, nutrientNumber: "203", nutrientName: "Protein", unitName: "G", value: 0 },
+        { nutrientId: 1004, nutrientNumber: "204", nutrientName: "Total lipid (fat)", unitName: "G", value: 0 },
+        { nutrientId: 1005, nutrientNumber: "205", nutrientName: "Carbohydrate, by difference", unitName: "G", value: 0 },
+      ],
+    });
+    const ai = mockAi(
+      meal([
+        {
+          name: "Coke Zero",
+          searchQuery: "coke zero",
+          fallbackQuery: "coca-cola zero sugar",
+          servingHint: "1 can",
+          quantity: 1,
+        },
+      ]),
+      (input) => {
+        const ids = input.candidates.map((candidate) => candidate.fdcId);
+        expect(ids).toContain(2742339);
+        expect(ids).toContain(2742717);
+        return { fdcId: 2742717, grams: 355, servingDescription: "1 can" };
+      },
+    );
+    const fdc = mockFdc(
+      (query) => (query === "coca-cola zero sugar" ? [cokeZero] : [dietCoke]),
+      {
+        2742717: {
+          fdcId: 2742717,
+          dataType: "Branded",
+          description: "Coca-Cola Zero Sugar Can, 12 fl oz",
+          foodNutrients: [{ type: "FoodNutrient", id: 34890924, amount: 0 }],
+          labelNutrients: {},
+        } as FoodItem,
+      },
+    );
+    const logger = new FoodLogger({
+      fdc,
+      ai,
+      queryCache: new MemoryCacheStore(),
+      foodStore: new MemoryFoodStore(),
+    });
+
+    const entry = await logger.log("coke zero");
+    expect(entry.items[0]?.fdcId).toBe(2742717);
+    expect(fdc.searchFoods).toHaveBeenCalledTimes(2);
   });
 
   it("retries an empty search with fallbackQuery", async () => {

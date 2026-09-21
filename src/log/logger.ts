@@ -1,10 +1,11 @@
 import { MongoClient } from "mongodb";
 import { MongoCacheStore, type CacheStore } from "../fdc/cache.js";
 import { FdcClient } from "../fdc/client.js";
+import type { FoodItem, SearchResultFood } from "../fdc/types.js";
 import { XaiFoodLogAi } from "./ai.js";
 import { FoodLogAiError, FoodLogConfigError, FoodLogMatchError } from "./errors.js";
 import { candidateIds, clampGrams, compactSearchCandidate } from "./match.js";
-import { macrosForGrams, sumMacros } from "./nutrients.js";
+import { macrosForGrams, sumMacros, tryMacrosForGrams, withSearchNutrients } from "./nutrients.js";
 import { cacheResolution, QUERY_CACHE_PREFIX, queryCacheKey, suggestionFromCacheEntry, normalizeQuery } from "./query-cache.js";
 import { MongoFoodStore } from "./store.js";
 import {
@@ -186,6 +187,8 @@ export class FoodLogger {
 
     const food = await this.fdc.getFood(selected.fdcId);
     const grams = clampGrams(selected.grams);
+    const searchHit = foods.find((candidate) => candidate.fdcId === food.fdcId);
+    const macros = await this.macrosForItem(food, grams, searchHit);
     return {
       name: item.name,
       fdcId: food.fdcId,
@@ -193,8 +196,23 @@ export class FoodLogger {
       dataType: food.dataType,
       grams,
       servingDescription: selected.servingDescription,
-      macros: macrosForGrams(food, grams),
+      macros,
     };
+  }
+
+  private async macrosForItem(food: FoodItem, grams: number, searchHit?: SearchResultFood) {
+    const fromDetail = tryMacrosForGrams(food, grams);
+    if (fromDetail) {
+      return fromDetail;
+    }
+    if (searchHit) {
+      const fromSearch = tryMacrosForGrams(withSearchNutrients(food, searchHit), grams);
+      if (fromSearch) {
+        return fromSearch;
+      }
+    }
+    const abridged = await this.fdc.getFood(food.fdcId, { format: "abridged" });
+    return macrosForGrams({ ...food, foodNutrients: abridged.foodNutrients }, grams);
   }
 
   private async searchItem(item: ParsedFoodItem) {
@@ -204,18 +222,22 @@ export class FoodLogger {
       dataType: item.dataTypes,
       pageSize: SEARCH_PAGE_SIZE,
     });
-    const foods = primary.foods ?? [];
-    if (foods.length > 0) {
-      return foods;
-    }
+    const foods = [...(primary.foods ?? [])];
     if (!item.fallbackQuery) {
-      return [];
+      return foods;
     }
     const fallback = await this.fdc.searchFoods({
       query: item.fallbackQuery,
       pageSize: SEARCH_PAGE_SIZE,
     });
-    return fallback.foods ?? [];
+    const seen = new Set(foods.map((food) => food.fdcId));
+    for (const food of fallback.foods ?? []) {
+      if (!seen.has(food.fdcId)) {
+        seen.add(food.fdcId);
+        foods.push(food);
+      }
+    }
+    return foods;
   }
 }
 

@@ -27,8 +27,8 @@ Rules:
 - A simple whole food (for example "banana") is ONE item. Prefer dataTypes ["Foundation", "SR Legacy", "Survey (FNDDS)"].
 - Do not invent ingredients that were not named.
 - quantity is how many of that item were eaten (default 1). "2 bananas" means quantity 2.
-- searchQuery is a short FDC search string.
-- fallbackQuery is a broader search if the specific one might miss; use null if not needed.
+- searchQuery is a short FDC search string. For branded nicknames, use the catalog name FDC is likely to index (for example "coke zero" → "Coca-Cola Zero Sugar", "diet coke" → "Diet Coke").
+- fallbackQuery is a broader search if the specific one might miss; use null if not needed. Leave the nickname in fallbackQuery when you expand searchQuery.
 - servingHint is a typical household serving for this log, including quantity.
 - brandOwner and dataTypes are null when unknown.`;
 

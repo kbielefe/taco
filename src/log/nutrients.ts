@@ -1,4 +1,4 @@
-import type { AbridgedFoodNutrient, FoodItem, FoodNutrient, LabelNutrients } from "../fdc/types.js";
+import type { AbridgedFoodNutrient, FoodItem, FoodNutrient, LabelNutrients, SearchFoodNutrient, SearchResultFood } from "../fdc/types.js";
 import { FoodLogMatchError } from "./errors.js";
 import type { FoodLogMacros } from "./types.js";
 
@@ -25,6 +25,16 @@ interface NutrientReading {
 }
 
 export function macrosForGrams(food: FoodItem, grams: number): FoodLogMacros {
+  const macros = tryMacrosForGrams(food, grams);
+  if (macros) {
+    return macros;
+  }
+  throw new FoodLogMatchError(`No nutrient data for FDC ${food.fdcId} (${food.description})`, {
+    query: food.description,
+  });
+}
+
+export function tryMacrosForGrams(food: FoodItem, grams: number): FoodLogMacros | undefined {
   const per100 = macrosFromFoodNutrients(food);
   if (per100) {
     return scaleMacros(per100, grams / 100);
@@ -35,10 +45,30 @@ export function macrosForGrams(food: FoodItem, grams: number): FoodLogMacros {
   if (label && servingGrams && servingGrams > 0) {
     return scaleMacros(label, grams / servingGrams);
   }
+  return undefined;
+}
 
-  throw new FoodLogMatchError(`No nutrient data for FDC ${food.fdcId} (${food.description})`, {
-    query: food.description,
-  });
+/** Some branded `/food/{id}` payloads omit nutrient identity; search hits still have it. */
+export function withSearchNutrients(food: FoodItem, search: SearchResultFood): FoodItem {
+  if (!search.foodNutrients || search.foodNutrients.length === 0) {
+    return food;
+  }
+  return {
+    ...food,
+    foodNutrients: search.foodNutrients.map(searchNutrientToFoodNutrient),
+  };
+}
+
+function searchNutrientToFoodNutrient(nutrient: SearchFoodNutrient): FoodNutrient {
+  return {
+    amount: nutrient.value,
+    nutrient: {
+      id: nutrient.nutrientId,
+      number: nutrient.nutrientNumber,
+      name: nutrient.nutrientName,
+      unitName: nutrient.unitName,
+    },
+  };
 }
 
 export function sumMacros(items: FoodLogMacros[]): FoodLogMacros {
@@ -205,28 +235,29 @@ function firstMatch(
 
 function readingsFromFood(food: FoodItem): NutrientReading[] {
   const nutrients = "foodNutrients" in food ? (food.foodNutrients ?? []) : [];
-  return nutrients.map((nutrient: FoodNutrient | AbridgedFoodNutrient) => {
-    if (isFullNutrient(nutrient)) {
-      return {
-        id: nutrient.nutrient?.id,
-        number: nutrient.nutrient?.number,
-        name: nutrient.nutrient?.name,
-        amount: nutrient.amount,
-        unit: nutrient.nutrient?.unitName,
-      };
-    }
-    const abridged = nutrient as AbridgedFoodNutrient;
-    return {
-      number: abridged.number !== undefined ? String(abridged.number) : undefined,
-      name: abridged.name,
-      amount: abridged.amount,
-      unit: abridged.unitName,
-    };
-  });
+  return nutrients.map((nutrient) => readingFromNutrient(nutrient));
 }
 
-function isFullNutrient(nutrient: FoodNutrient | AbridgedFoodNutrient): nutrient is FoodNutrient {
-  return "nutrient" in nutrient;
+function readingFromNutrient(
+  nutrient: FoodNutrient | AbridgedFoodNutrient | SearchFoodNutrient,
+): NutrientReading {
+  const rec = nutrient as FoodNutrient & AbridgedFoodNutrient & SearchFoodNutrient;
+  const nested = rec.nutrient;
+  return {
+    // `FoodNutrient.id` is the row id, not the nutrient id. Never use it as nutrient.id.
+    id: nested?.id ?? rec.nutrientId,
+    number:
+      nested?.number !== undefined
+        ? String(nested.number)
+        : rec.number !== undefined
+          ? String(rec.number)
+          : rec.nutrientNumber !== undefined
+            ? String(rec.nutrientNumber)
+            : undefined,
+    name: nested?.name ?? rec.name ?? rec.nutrientName,
+    amount: rec.amount ?? rec.value,
+    unit: nested?.unitName ?? rec.unitName,
+  };
 }
 
 function normalizeUnit(unit?: string): string {

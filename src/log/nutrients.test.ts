@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FoodItem, FoodNutrient } from "../fdc/types.js";
-import { macrosForGrams, scaleMacros, sumMacros } from "./nutrients.js";
+import { FoodLogMatchError } from "./errors.js";
+import { macrosForGrams, scaleMacros, sumMacros, tryMacrosForGrams, withSearchNutrients } from "./nutrients.js";
 
 function nutrient(id: number, number: string, name: string, amount: number, unitName = "G"): FoodNutrient {
   return { amount, nutrient: { id, number, name, unitName } };
@@ -68,6 +69,70 @@ describe("macrosForGrams", () => {
       100,
     );
     expect(macros.fiberG).toBe(0);
+  });
+
+  it("reads abridged number/name/amount nutrients", () => {
+    const macros = macrosForGrams(
+      {
+        fdcId: 2742717,
+        dataType: "Branded",
+        description: "Coca-Cola Zero Sugar Can, 12 fl oz",
+        foodNutrients: [
+          { number: "208", name: "Energy", amount: 0, unitName: "KCAL" },
+          { number: "203", name: "Protein", amount: 0, unitName: "G" },
+          { number: "204", name: "Total lipid (fat)", amount: 0, unitName: "G" },
+          { number: "205", name: "Carbohydrate, by difference", amount: 0, unitName: "G" },
+        ],
+      },
+      355,
+    );
+    expect(macros).toEqual({ caloriesKcal: 0, proteinG: 0, fatG: 0, carbG: 0, fiberG: 0 });
+  });
+
+  it("does not treat FoodNutrient row ids as nutrient ids", () => {
+    const gdsn = {
+      fdcId: 2742717,
+      dataType: "Branded",
+      description: "Coca-Cola Zero Sugar Can, 12 fl oz",
+      servingSize: 355,
+      servingSizeUnit: "MLT",
+      foodNutrients: [
+        { type: "FoodNutrient", id: 34890924, amount: 0 },
+        { type: "FoodNutrient", id: 34890931, amount: 11 },
+      ],
+      labelNutrients: {},
+    } as FoodItem;
+    expect(tryMacrosForGrams(gdsn, 355)).toBeUndefined();
+    expect(() => macrosForGrams(gdsn, 355)).toThrow(FoodLogMatchError);
+  });
+
+  it("uses search-hit nutrients when the detail payload has no nutrient identity", () => {
+    const gdsn = {
+      fdcId: 2742717,
+      dataType: "Branded",
+      description: "Coca-Cola Zero Sugar Can, 12 fl oz",
+      servingSize: 355,
+      servingSizeUnit: "MLT",
+      foodNutrients: [{ type: "FoodNutrient", id: 34890924, amount: 0 }],
+      labelNutrients: {},
+    } as FoodItem;
+    const merged = withSearchNutrients(gdsn, {
+      fdcId: 2742717,
+      description: "Coca-Cola Zero Sugar Can, 12 fl oz",
+      foodNutrients: [
+        { nutrientId: 1008, nutrientNumber: "208", nutrientName: "Energy", unitName: "KCAL", value: 0 },
+        { nutrientId: 1003, nutrientNumber: "203", nutrientName: "Protein", unitName: "G", value: 0 },
+        { nutrientId: 1004, nutrientNumber: "204", nutrientName: "Total lipid (fat)", unitName: "G", value: 0 },
+        { nutrientId: 1005, nutrientNumber: "205", nutrientName: "Carbohydrate, by difference", unitName: "G", value: 0 },
+      ],
+    });
+    expect(macrosForGrams(merged, 355)).toEqual({
+      caloriesKcal: 0,
+      proteinG: 0,
+      fatG: 0,
+      carbG: 0,
+      fiberG: 0,
+    });
   });
 });
 
