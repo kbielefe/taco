@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ParsedMealSchema, normalizeParsedMeal } from "./parse.js";
+import { ParsedMealSchema, normalizeParsedMeal, uniqueSearchQueries } from "./parse.js";
 
 describe("ParsedMealSchema", () => {
   it("accepts Cheerios and milk as two items", () => {
@@ -8,8 +8,7 @@ describe("ParsedMealSchema", () => {
         items: [
           {
             name: "Cheerios",
-            searchQuery: "Cheerios",
-            fallbackQuery: "toasted oat cereal",
+            searchQueries: ["Cheerios", "Cheerios toasted oat cereal", "toasted whole grain oat cereal"],
             brandOwner: "General Mills",
             dataTypes: ["Branded"],
             servingHint: "1 cup cereal",
@@ -17,8 +16,7 @@ describe("ParsedMealSchema", () => {
           },
           {
             name: "milk",
-            searchQuery: "2% milk",
-            fallbackQuery: "milk",
+            searchQueries: ["2% milk", "milk", "reduced fat milk"],
             brandOwner: null,
             dataTypes: ["Foundation", "SR Legacy", "Survey (FNDDS)"],
             servingHint: "1 cup milk",
@@ -29,7 +27,8 @@ describe("ParsedMealSchema", () => {
     );
     expect(parsed.items).toHaveLength(2);
     expect(parsed.items[0]?.name).toBe("Cheerios");
-    expect(parsed.items[1]?.searchQuery).toBe("2% milk");
+    expect(parsed.items[1]?.searchQueries).toContain("2% milk");
+    expect(parsed.items[0]?.searchQueries).toContain("General Mills Cheerios");
   });
 
   it("accepts a branded Jimmy Dean egg cup as one item", () => {
@@ -38,8 +37,7 @@ describe("ParsedMealSchema", () => {
         items: [
           {
             name: "Jimmy Dean egg cup",
-            searchQuery: "Jimmy Dean egg cup",
-            fallbackQuery: "egg cup",
+            searchQueries: ["Jimmy Dean egg cup", "Jimmy Dean breakfast cup", "egg bite cup"],
             brandOwner: "Jimmy Dean",
             dataTypes: ["Branded"],
             servingHint: "1 egg cup",
@@ -59,8 +57,7 @@ describe("ParsedMealSchema", () => {
         items: [
           {
             name: "Apple crumble cake",
-            searchQuery: "apple crumble cake",
-            fallbackQuery: "apple crisp",
+            searchQueries: ["apple crumble cake", "apple crisp", "apple crumble"],
             brandOwner: null,
             dataTypes: ["Survey (FNDDS)", "Branded"],
             servingHint: "1 slice",
@@ -79,8 +76,7 @@ describe("ParsedMealSchema", () => {
         items: [
           {
             name: "banana",
-            searchQuery: "banana raw",
-            fallbackQuery: "banana",
+            searchQueries: ["banana raw", "banana", "bananas"],
             brandOwner: null,
             dataTypes: ["Foundation", "SR Legacy", "Survey (FNDDS)"],
             servingHint: "1 medium banana",
@@ -96,8 +92,7 @@ describe("ParsedMealSchema", () => {
         items: [
           {
             name: "banana",
-            searchQuery: "banana raw",
-            fallbackQuery: null,
+            searchQueries: ["banana raw"],
             brandOwner: null,
             dataTypes: null,
             servingHint: "2 medium bananas",
@@ -107,7 +102,15 @@ describe("ParsedMealSchema", () => {
       }),
     );
     expect(two.items[0]?.quantity).toBe(2);
-    expect(two.items[0]?.fallbackQuery).toBeUndefined();
+    expect(two.items[0]?.searchQueries).toEqual(["banana raw", "banana"]);
     expect(two.items[0]?.dataTypes).toBeUndefined();
+  });
+});
+
+describe("uniqueSearchQueries", () => {
+  it("trims, dedupes case-insensitively, and caps the list", () => {
+    expect(
+      uniqueSearchQueries(["  Coke Zero  ", "coke zero", "Coca-Cola Zero Sugar", "", "diet coke", "zero sugar cola", "cola"]),
+    ).toEqual(["Coke Zero", "Coca-Cola Zero Sugar", "diet coke", "zero sugar cola", "cola"]);
   });
 });

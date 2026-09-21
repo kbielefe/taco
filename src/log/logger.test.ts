@@ -64,13 +64,13 @@ describe("FoodLogger", () => {
       meal([
         {
           name: "Cheerios",
-          searchQuery: "Cheerios",
+          searchQueries: ["Cheerios"],
           servingHint: "1 cup cereal",
           quantity: 1,
         },
         {
           name: "milk",
-          searchQuery: "2% milk",
+          searchQueries: ["2% milk"],
           servingHint: "1 cup milk",
           quantity: 1,
         },
@@ -102,7 +102,7 @@ describe("FoodLogger", () => {
     expect(second._id).not.toEqual(first._id);
     expect(ai.parseQuery).toHaveBeenCalledOnce();
     expect(ai.selectMatch).toHaveBeenCalledTimes(2);
-    expect(fdc.searchFoods).toHaveBeenCalledTimes(2);
+    expect(fdc.searchFoods).toHaveBeenCalledTimes(3);
 
     const cached = await queryCache.get<{ query: string }>("food-log:v1:query:cheerios and milk");
     expect(cached?.query).toBe("Cheerios and milk");
@@ -140,7 +140,7 @@ describe("FoodLogger", () => {
       meal([
         {
           name: "Coke Zero",
-          searchQuery: "Coca-Cola Zero Sugar",
+          searchQueries: ["Coca-Cola Zero Sugar"],
           servingHint: "1 can",
           quantity: 1,
         },
@@ -165,7 +165,7 @@ describe("FoodLogger", () => {
 
   it("does not insert when FDC has no match", async () => {
     const ai = mockAi(
-      meal([{ name: "mystery stew", searchQuery: "mystery stew", servingHint: "1 bowl", quantity: 1 }]),
+      meal([{ name: "mystery stew", searchQueries: ["mystery stew"], servingHint: "1 bowl", quantity: 1 }]),
       { fdcId: 1, grams: 100, servingDescription: "1 bowl" },
     );
     const fdc = mockFdc([], {});
@@ -179,12 +179,13 @@ describe("FoodLogger", () => {
     expect(ai.selectMatch).not.toHaveBeenCalled();
   });
 
-  it("merges fallbackQuery hits when the primary search returns the wrong foods", async () => {
-    const dietCoke = jsonFood({ fdcId: 2742339, description: "Diet Coke Bottle, 1.25 Liters", dataType: "Branded" });
+  it("searches all queries in parallel and reranks so a later query can win", async () => {
+    const dietCoke = jsonFood({ fdcId: 2742339, description: "Diet Coke Bottle, 1.25 Liters", dataType: "Branded", score: 900 });
     const cokeZero = jsonFood({
       fdcId: 2742717,
       description: "Coca-Cola Zero Sugar Can, 12 fl oz",
       dataType: "Branded",
+      score: 200,
       foodNutrients: [
         { nutrientId: 1008, nutrientNumber: "208", nutrientName: "Energy", unitName: "KCAL", value: 0 },
         { nutrientId: 1003, nutrientNumber: "203", nutrientName: "Protein", unitName: "G", value: 0 },
@@ -196,13 +197,13 @@ describe("FoodLogger", () => {
       meal([
         {
           name: "Coke Zero",
-          searchQuery: "coke zero",
-          fallbackQuery: "coca-cola zero sugar",
+          searchQueries: ["coke zero", "Coca-Cola Zero Sugar", "Coke Zero Sugar"],
           servingHint: "1 can",
           quantity: 1,
         },
       ]),
       (input) => {
+        expect(input.candidates[0]?.fdcId).toBe(2742717);
         const ids = input.candidates.map((candidate) => candidate.fdcId);
         expect(ids).toContain(2742339);
         expect(ids).toContain(2742717);
@@ -210,7 +211,7 @@ describe("FoodLogger", () => {
       },
     );
     const fdc = mockFdc(
-      (query) => (query === "coca-cola zero sugar" ? [cokeZero] : [dietCoke]),
+      (query) => (query.toLowerCase().includes("zero sugar") ? [cokeZero] : [dietCoke]),
       {
         2742717: {
           fdcId: 2742717,
@@ -230,17 +231,16 @@ describe("FoodLogger", () => {
 
     const entry = await logger.log("coke zero");
     expect(entry.items[0]?.fdcId).toBe(2742717);
-    expect(fdc.searchFoods).toHaveBeenCalledTimes(2);
+    expect(fdc.searchFoods).toHaveBeenCalledTimes(3);
   });
 
-  it("retries an empty search with fallbackQuery", async () => {
+  it("merges hits when some queries miss", async () => {
     const banana = jsonFood({ fdcId: 1105073, description: "Bananas, raw", foodMeasures: [{ gramWeight: 118, disseminationText: "1 medium" }] });
     const ai = mockAi(
       meal([
         {
           name: "banana",
-          searchQuery: "cavendish banana",
-          fallbackQuery: "banana",
+          searchQueries: ["cavendish banana", "banana"],
           servingHint: "1 medium banana",
           quantity: 1,
         },
@@ -265,7 +265,7 @@ describe("FoodLogger", () => {
   it("skipCache bypasses a stored resolution", async () => {
     const banana = jsonFood({ fdcId: 1, description: "Bananas, raw" });
     const ai = mockAi(
-      meal([{ name: "banana", searchQuery: "banana", servingHint: "1 medium banana", quantity: 1 }]),
+      meal([{ name: "banana", searchQueries: ["banana"], servingHint: "1 medium banana", quantity: 1 }]),
       { fdcId: 1, grams: 118, servingDescription: "1 medium banana" },
     );
     const fdc = mockFdc([banana], { 1: details(1, "Bananas, raw", 89) });
@@ -286,7 +286,7 @@ describe("FoodLogger", () => {
     const foodStore = new MemoryFoodStore();
     const logger = new FoodLogger({
       fdc: mockFdc([banana], { 1: details(1, "Bananas, raw", 89) }),
-      ai: mockAi(meal([{ name: "banana", searchQuery: "banana", servingHint: "1 banana", quantity: 1 }]), {
+      ai: mockAi(meal([{ name: "banana", searchQueries: ["banana"], servingHint: "1 banana", quantity: 1 }]), {
         fdcId: 1,
         grams: 118,
         servingDescription: "1 banana",
@@ -317,7 +317,7 @@ describe("FoodLogger", () => {
 
   it("rejects a selected fdcId that was not a candidate", async () => {
     const ai = mockAi(
-      meal([{ name: "banana", searchQuery: "banana", servingHint: "1 banana", quantity: 1 }]),
+      meal([{ name: "banana", searchQueries: ["banana"], servingHint: "1 banana", quantity: 1 }]),
       { fdcId: 999, grams: 100, servingDescription: "1 banana" },
     );
     const fdc = mockFdc([jsonFood({ fdcId: 1, description: "Bananas, raw" })], {
@@ -333,7 +333,7 @@ describe("FoodLogger", () => {
 describe("createFoodLogger", () => {
   it("does not require env when dependencies are injected", async () => {
     const logger = await createFoodLogger({
-      ai: mockAi(meal([{ name: "banana", searchQuery: "banana", servingHint: "1 banana", quantity: 1 }]), {
+      ai: mockAi(meal([{ name: "banana", searchQueries: ["banana"], servingHint: "1 banana", quantity: 1 }]), {
         fdcId: 1,
         grams: 118,
         servingDescription: "1 banana",

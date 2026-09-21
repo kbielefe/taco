@@ -41,7 +41,7 @@ function testApp() {
       getFood: vi.fn(async () => details(1, "Bananas, raw", 89)),
     },
     ai: mockAi(
-      { items: [{ name: "banana", searchQuery: "banana", servingHint: "1 banana", quantity: 1 }] },
+      { items: [{ name: "banana", searchQueries: ["banana"], servingHint: "1 banana", quantity: 1 }] },
       { fdcId: 1, grams: 118, servingDescription: "1 banana" },
     ),
     queryCache,
@@ -94,7 +94,7 @@ describe("food log HTTP API", () => {
         searchFoods: vi.fn(async () => ({ foods: [] })),
         getFood: vi.fn(async () => details(1, "x", 1)),
       },
-      ai: mockAi({ items: [{ name: "mystery", searchQuery: "mystery", servingHint: "1 bowl", quantity: 1 }] }, {
+      ai: mockAi({ items: [{ name: "mystery", searchQueries: ["mystery"], servingHint: "1 bowl", quantity: 1 }] }, {
         fdcId: 1,
         grams: 100,
         servingDescription: "1 bowl",

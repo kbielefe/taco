@@ -49,8 +49,7 @@ export interface FoodLogEntry extends FoodLogResolution {
 
 export interface ParsedFoodItem {
   name: string;
-  searchQuery: string;
-  fallbackQuery?: string;
+  searchQueries: string[];
   brandOwner?: string;
   dataTypes?: FdcDataType[];
   servingHint: string;

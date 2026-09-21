@@ -4,8 +4,9 @@ import { FdcClient } from "../fdc/client.js";
 import type { FoodItem, SearchResultFood } from "../fdc/types.js";
 import { XaiFoodLogAi } from "./ai.js";
 import { FoodLogAiError, FoodLogConfigError, FoodLogMatchError } from "./errors.js";
-import { candidateIds, clampGrams, compactSearchCandidate } from "./match.js";
+import { candidateIds, clampGrams, compactSearchCandidate, fusedSearchFoods } from "./match.js";
 import { macrosForGrams, sumMacros, tryMacrosForGrams, withSearchNutrients } from "./nutrients.js";
+import { searchQueriesForItem } from "./parse.js";
 import { cacheResolution, QUERY_CACHE_PREFIX, queryCacheKey, suggestionFromCacheEntry, normalizeQuery } from "./query-cache.js";
 import { MongoFoodStore } from "./store.js";
 import {
@@ -172,7 +173,7 @@ export class FoodLogger {
     const foods = await this.searchItem(item);
     if (foods.length === 0) {
       throw new FoodLogMatchError(`No FDC match for "${item.name}"`, {
-        query: item.searchQuery,
+        query: searchQueriesForItem(item).join(", "),
         candidates: [],
       });
     }
@@ -216,28 +217,27 @@ export class FoodLogger {
   }
 
   private async searchItem(item: ParsedFoodItem) {
-    const primary = await this.fdc.searchFoods({
-      query: item.searchQuery,
-      brandOwner: item.brandOwner,
-      dataType: item.dataTypes,
-      pageSize: SEARCH_PAGE_SIZE,
-    });
-    const foods = [...(primary.foods ?? [])];
-    if (!item.fallbackQuery) {
-      return foods;
-    }
-    const fallback = await this.fdc.searchFoods({
-      query: item.fallbackQuery,
-      pageSize: SEARCH_PAGE_SIZE,
-    });
-    const seen = new Set(foods.map((food) => food.fdcId));
-    for (const food of fallback.foods ?? []) {
-      if (!seen.has(food.fdcId)) {
-        seen.add(food.fdcId);
-        foods.push(food);
+    const queries = searchQueriesForItem(item);
+    const searches = queries.flatMap((query) => {
+      const unfiltered = this.fdc.searchFoods({ query, pageSize: SEARCH_PAGE_SIZE });
+      if (!item.brandOwner && !item.dataTypes) {
+        return [unfiltered];
       }
-    }
-    return foods;
+      return [
+        unfiltered,
+        this.fdc.searchFoods({
+          query,
+          brandOwner: item.brandOwner,
+          dataType: item.dataTypes,
+          pageSize: SEARCH_PAGE_SIZE,
+        }),
+      ];
+    });
+    const results = await Promise.all(searches);
+    return fusedSearchFoods(
+      results.map((result) => result.foods ?? []),
+      item,
+    );
   }
 }
 

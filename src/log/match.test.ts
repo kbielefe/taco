@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SearchResultFood } from "../fdc/types.js";
-import { clampGrams, compactSearchCandidate } from "./match.js";
+import { clampGrams, compactSearchCandidate, fusedSearchFoods } from "./match.js";
+import type { ParsedFoodItem } from "./types.js";
 
 function brandedCheerios(): SearchResultFood {
   return {
@@ -43,5 +44,39 @@ describe("clampGrams", () => {
     expect(clampGrams(-10)).toBe(1);
     expect(clampGrams(9000)).toBe(5000);
     expect(clampGrams(118)).toBe(118);
+  });
+});
+
+describe("fusedSearchFoods", () => {
+  it("dedupes, prefers lexical match over a higher FDC score, and truncates", () => {
+    const item: ParsedFoodItem = {
+      name: "Coke Zero",
+      searchQueries: ["coke zero", "Coca-Cola Zero Sugar", "Coke Zero Sugar"],
+      servingHint: "1 can",
+      quantity: 1,
+    };
+    const dietCoke: SearchResultFood = {
+      fdcId: 1,
+      description: "Diet Coke Bottle, 1.25 Liters",
+      dataType: "Branded",
+      brandOwner: "Coca-Cola",
+      score: 900,
+    };
+    const cokeZero: SearchResultFood = {
+      fdcId: 2,
+      description: "Coca-Cola Zero Sugar Can, 12 fl oz",
+      dataType: "Branded",
+      brandOwner: "Coca-Cola",
+      score: 200,
+    };
+    const lime: SearchResultFood = {
+      fdcId: 3,
+      description: "Coke with Lime",
+      dataType: "Branded",
+      score: 800,
+    };
+    const ranked = fusedSearchFoods([[dietCoke, lime], [cokeZero], [cokeZero]], item);
+    expect(ranked[0]?.fdcId).toBe(2);
+    expect(ranked.map((food) => food.fdcId)).toEqual([2, 1, 3]);
   });
 });
