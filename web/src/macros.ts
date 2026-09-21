@@ -41,5 +41,5 @@ export function formatGrams(value: number): string {
 }
 
 export function formatMacroLine(macros: Macros): string {
-  return `${formatKcal(macros.caloriesKcal)} kcal · P ${formatGrams(macros.proteinG)} · F ${formatGrams(macros.fatG)} · C ${formatGrams(macros.carbG)} · Fi ${formatGrams(macros.fiberG)}`;
+  return `${formatKcal(macros.caloriesKcal)} kcal · protein ${formatGrams(macros.proteinG)} · fat ${formatGrams(macros.fatG)} · carbs ${formatGrams(macros.carbG)} · fiber ${formatGrams(macros.fiberG)}`;
 }

@@ -132,8 +132,10 @@ body {
 .macro-label {
   font-size: 0.75rem;
   font-weight: 650;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
 }
 
 .macro-value {
