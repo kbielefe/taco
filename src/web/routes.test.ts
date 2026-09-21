@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { MemoryCacheStore } from "../fdc/cache.js";
 import type { FoodItem, SearchResult, SearchResultFood } from "../fdc/types.js";
+import { Journal } from "../journal/journal.js";
+import { MemoryJournalStore } from "../journal/store.js";
 import { FoodLogger } from "../log/logger.js";
 import { MemoryFoodStore } from "../log/store.js";
 import type { FoodLogAi, ParsedMeal, SelectMatchInput, SelectedMatch } from "../log/types.js";
@@ -47,7 +49,7 @@ function testApp() {
     queryCache,
     foodStore,
   });
-  return { app: createApp(logger), logger, foodStore };
+  return { app: createApp({ logger, journal: new Journal(new MemoryJournalStore()) }), logger, foodStore };
 }
 
 describe("food log HTTP API", () => {
@@ -102,7 +104,7 @@ describe("food log HTTP API", () => {
       queryCache: new MemoryCacheStore(),
       foodStore: new MemoryFoodStore(),
     });
-    const app = createApp(logger);
+    const app = createApp({ logger, journal: new Journal(new MemoryJournalStore()) });
     const res = await app.request("/api/meals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -185,7 +187,7 @@ describe("food log HTTP API", () => {
       queryCache: new MemoryCacheStore(),
       foodStore: new MemoryFoodStore(),
     });
-    const app = createApp(logger);
+    const app = createApp({ logger, journal: new Journal(new MemoryJournalStore()) });
     const res = await app.request("/api/meals", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
@@ -200,5 +202,121 @@ describe("food log HTTP API", () => {
     expect(last?.type).toBe("error");
     expect(last?.status).toBe(422);
     expect(last?.error?.message).toMatch(/simpler description/i);
+  });
+});
+
+describe("journal HTTP API", () => {
+  function app() {
+    return createApp({
+      logger: new FoodLogger({
+        fdc: {
+          searchFoods: vi.fn(async () => ({ foods: [] })),
+          getFood: vi.fn(async () => details(1, "x", 1)),
+        },
+        ai: mockAi({ items: [] }, { fdcId: 1, grams: 1, servingDescription: "x" }),
+        queryCache: new MemoryCacheStore(),
+        foodStore: new MemoryFoodStore(),
+      }),
+      journal: new Journal(new MemoryJournalStore()),
+    });
+  }
+
+  it("creates a kind with its first entry, lists it, and deletes it", async () => {
+    const api = app();
+    const created = await api.request("/api/journal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        at: "2026-09-20T15:00:00.000Z",
+        kind: { label: "Weight", fields: [{ label: "Weight", type: "number", unit: "lb" }] },
+        values: [{ fieldId: "Weight", value: 315 }],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const entry = (await created.json()) as { id: string; values: { value: number }[]; kind: { label: string } };
+    expect(entry.kind.label).toBe("Weight");
+    expect(entry.values[0]?.value).toBe(315);
+
+    const listed = await api.request("/api/journal?from=2026-09-20T00:00:00.000Z&to=2026-09-21T00:00:00.000Z");
+    expect(listed.status).toBe(200);
+    const body = (await listed.json()) as { observations: { id: string }[] };
+    expect(body.observations.map((item) => item.id)).toEqual([entry.id]);
+
+    const removed = await api.request(`/api/journal/${entry.id}`, { method: "DELETE" });
+    expect(removed.status).toBe(204);
+    const missing = await api.request(`/api/journal/${entry.id}`, { method: "DELETE" });
+    expect(missing.status).toBe(404);
+  });
+
+  it("rejects a duplicate name, a bad choice, and an event that did not happen", async () => {
+    const api = app();
+    const first = await api.request("/api/journal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: { label: "Migraine", fields: [{ label: "Course", type: "enum", options: ["started", "gone"] }] },
+        values: [{ fieldId: "Course", value: "gone" }],
+      }),
+    });
+    expect(first.status).toBe(201);
+
+    const duplicate = await api.request("/api/journal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: { label: "migraine", fields: [{ label: "Course", type: "enum", options: ["started", "gone"] }] },
+        values: [{ fieldId: "Course", value: "started" }],
+      }),
+    });
+    expect(duplicate.status).toBe(409);
+
+    const migraine = (await first.json()) as { kind: { id: string } };
+    const bad = await api.request("/api/journal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kindId: migraine.kind.id, values: [{ fieldId: "course", value: "awful" }] }),
+    });
+    expect(bad.status).toBe(400);
+
+    const event = await api.request("/api/journal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: { label: "Nurtec", fields: [{ label: "Taken", type: "event" }] },
+        values: [{ fieldId: "Taken", value: false }],
+      }),
+    });
+    expect(event.status).toBe(400);
+  });
+
+  it("appends a field onto an existing kind", async () => {
+    const api = app();
+    const created = await api.request("/api/journal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: {
+          label: "Blood pressure",
+          fields: [
+            { label: "Systolic", type: "number", unit: "mmHg" },
+            { label: "Diastolic", type: "number", unit: "mmHg" },
+          ],
+        },
+        values: [
+          { fieldId: "Systolic", value: 120 },
+          { fieldId: "Diastolic", value: 80 },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const entry = (await created.json()) as { kind: { id: string } };
+    const appended = await api.request(`/api/journal/kinds/${entry.kind.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ addFields: [{ label: "Arm", type: "text" }] }),
+    });
+    expect(appended.status).toBe(200);
+    const kind = (await appended.json()) as { fields: { id: string }[]; suggestions: Record<string, string[]> };
+    expect(kind.fields.map((field) => field.id)).toEqual(["systolic", "diastolic", "arm"]);
   });
 });

@@ -1,5 +1,6 @@
 import { deleteMeal, fetchMeals, fetchSuggestions, logMeal, type Macros, type Meal } from "./api.js";
 import { mountCombobox } from "./combobox.js";
+import { mountJournal } from "./journal.js";
 import { emptyMacros, formatGrams, formatKcal, sumMacros } from "./macros.js";
 import { renderMeal } from "./meals.js";
 import { formatDay, localDayRange } from "./time.js";
@@ -11,6 +12,10 @@ function required<T extends Element>(value: T | null, name: string): T {
   }
   return value;
 }
+
+const viewFood = required(document.querySelector<HTMLElement>("#view-food"), "view-food");
+const viewJournal = required(document.querySelector<HTMLElement>("#view-journal"), "view-journal");
+const viewLinks = [...document.querySelectorAll<HTMLAnchorElement>(".views a")];
 
 const nodes = {
   dateLabel: required(document.querySelector<HTMLParagraphElement>("#date-label"), "date-label"),
@@ -130,6 +135,51 @@ nodes.form.addEventListener("submit", async (event) => {
   }
 });
 
+function viewFromPath(path: string): "food" | "journal" {
+  return path === "/journal" ? "journal" : "food";
+}
+
+function show(view: "food" | "journal"): void {
+  viewFood.hidden = view !== "food";
+  viewJournal.hidden = view !== "journal";
+  document.title = view === "journal" ? "Today · Journal" : "Today · Food";
+  for (const link of viewLinks) {
+    if (link.dataset.view === view) {
+      link.setAttribute("aria-current", "page");
+    } else {
+      link.removeAttribute("aria-current");
+    }
+  }
+  if (view === "journal") {
+    void journal.load();
+  }
+}
+
+for (const link of viewLinks) {
+  link.addEventListener("click", (event) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+      return;
+    }
+    const url = new URL(link.href);
+    if (url.origin !== location.origin) {
+      return;
+    }
+    event.preventDefault();
+    const view = link.dataset.view === "journal" ? "journal" : "food";
+    if (location.pathname !== url.pathname) {
+      history.pushState({}, "", url.pathname);
+    }
+    show(view);
+  });
+}
+
+window.addEventListener("popstate", () => {
+  if (location.pathname !== "/" && location.pathname !== "/journal") {
+    history.replaceState({}, "", "/");
+  }
+  show(viewFromPath(location.pathname));
+});
+
 async function load(): Promise<void> {
   nodes.dateLabel.textContent = formatDay(new Date());
   paintTotals(emptyMacros);
@@ -143,4 +193,9 @@ async function load(): Promise<void> {
   }
 }
 
+const journal = mountJournal();
+if (location.pathname !== "/" && location.pathname !== "/journal") {
+  history.replaceState({}, "", "/");
+}
+show(viewFromPath(location.pathname));
 void load();

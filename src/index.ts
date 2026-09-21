@@ -44,6 +44,20 @@ export type {
   SRLegacyFoodItem,
   SurveyFoodItem,
 } from "./fdc/types.js";
+export { createJournal, Journal } from "./journal/journal.js";
+export type { AppendKindInput, CreateJournalOptions, JournalKindView, JournalObservationView, LogJournalInput, NewKindInput } from "./journal/journal.js";
+export { JournalConflictError, JournalConfigError, JournalError, JournalNotFoundError, JournalValidationError } from "./journal/errors.js";
+export { MemoryJournalStore, MongoJournalStore } from "./journal/store.js";
+export { FIELD_TYPES, KINDS_COLLECTION, OBSERVATIONS_COLLECTION, TEXT_SUGGESTION_LIMIT } from "./journal/types.js";
+export type {
+  FieldType,
+  FieldValue,
+  JournalField,
+  JournalFieldValue,
+  JournalKind,
+  JournalObservation,
+  JournalStore,
+} from "./journal/types.js";
 export { createFoodLogger, FoodLogger } from "./log/logger.js";
 export type { CreateFoodLoggerOptions, FoodLoggerOptions } from "./log/logger.js";
 export { XaiFoodLogAi } from "./log/ai.js";

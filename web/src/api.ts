@@ -180,6 +180,101 @@ export async function deleteMeal(id: string): Promise<void> {
   }
 }
 
+export type FieldType = "number" | "enum" | "text" | "boolean" | "event";
+
+export interface JournalField {
+  id: string;
+  label: string;
+  type: FieldType;
+  unit?: string;
+  options?: string[];
+}
+
+export interface JournalFieldInput {
+  label: string;
+  type: FieldType;
+  unit?: string;
+  options?: string[];
+}
+
+export interface JournalKind {
+  id: string;
+  label: string;
+  fields: JournalField[];
+  lastUsedAt: string | null;
+  suggestions: Record<string, string[]>;
+}
+
+export interface JournalValue {
+  fieldId: string;
+  value: number | string | boolean;
+}
+
+export interface JournalEntry {
+  id: string;
+  at: string;
+  createdAt: string;
+  kind: { id: string; label: string; fields: JournalField[] };
+  values: JournalValue[];
+}
+
+export async function fetchKinds(): Promise<JournalKind[]> {
+  const response = await fetch("/api/journal/kinds");
+  if (!response.ok) {
+    throw await readError(response);
+  }
+  const body = (await response.json()) as { kinds: JournalKind[] };
+  return body.kinds;
+}
+
+export async function fetchJournal(from: Date, to: Date): Promise<JournalEntry[]> {
+  const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
+  const response = await fetch(`/api/journal?${params}`);
+  if (!response.ok) {
+    throw await readError(response);
+  }
+  const body = (await response.json()) as { observations: JournalEntry[] };
+  return body.observations;
+}
+
+export async function logJournal(body: {
+  kindId?: string;
+  kind?: { label: string; fields: JournalFieldInput[] };
+  values: JournalValue[];
+}): Promise<JournalEntry> {
+  const response = await fetch("/api/journal", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw await readError(response);
+  }
+  return response.json() as Promise<JournalEntry>;
+}
+
+export async function appendKind(
+  id: string,
+  body: { addFields?: JournalFieldInput[]; addOptions?: { fieldId: string; options: string[] }[] },
+): Promise<JournalKind> {
+  const response = await fetch(`/api/journal/kinds/${id}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw await readError(response);
+  }
+  return response.json() as Promise<JournalKind>;
+}
+
+export async function deleteJournalEntry(id: string): Promise<void> {
+  const response = await fetch(`/api/journal/${id}`, { method: "DELETE" });
+  if (!response.ok) {
+    throw await readError(response);
+  }
+}
+
 export async function fetchSuggestions(query: string): Promise<Suggestion[]> {
   const response = await fetch(`/api/suggestions?${new URLSearchParams({ q: query })}`);
   if (!response.ok) {
