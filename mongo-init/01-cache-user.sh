@@ -44,7 +44,7 @@ try {
     privileges: [
       {
         resource: { db: "health", collection: "food" },
-        actions: ["find", "insert", "update", "createIndex", "listIndexes"],
+        actions: ["find", "insert", "update", "remove", "createIndex", "listIndexes"],
       },
     ],
     roles: [],
@@ -57,7 +57,7 @@ try {
     privileges: [
       {
         resource: { db: "health", collection: "food" },
-        actions: ["find", "insert", "update", "createIndex", "listIndexes"],
+        actions: ["find", "insert", "update", "remove", "createIndex", "listIndexes"],
       },
     ],
     roles: [],

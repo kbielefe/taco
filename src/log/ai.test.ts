@@ -3,11 +3,12 @@ import { XaiFoodLogAi } from "./ai.js";
 import { FoodLogConfigError } from "./errors.js";
 
 describe("XaiFoodLogAi", () => {
-  it("throws when XAI_API_KEY is missing", () => {
+  it("throws when XAI_API_KEY is missing on first request", async () => {
     const previous = process.env.XAI_API_KEY;
     delete process.env.XAI_API_KEY;
     try {
-      expect(() => new XaiFoodLogAi()).toThrow(FoodLogConfigError);
+      const ai = new XaiFoodLogAi();
+      await expect(ai.parseQuery("banana")).rejects.toBeInstanceOf(FoodLogConfigError);
     } finally {
       if (previous === undefined) {
         delete process.env.XAI_API_KEY;

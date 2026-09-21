@@ -5,18 +5,20 @@ import { XaiFoodLogAi } from "./ai.js";
 import { FoodLogAiError, FoodLogConfigError, FoodLogMatchError } from "./errors.js";
 import { candidateIds, clampGrams, compactSearchCandidate } from "./match.js";
 import { macrosForGrams, sumMacros } from "./nutrients.js";
-import { queryCacheKey } from "./query-cache.js";
+import { cacheResolution, QUERY_CACHE_PREFIX, queryCacheKey, suggestionFromCacheEntry, normalizeQuery } from "./query-cache.js";
 import { MongoFoodStore } from "./store.js";
 import {
   CACHE_COLLECTION,
   FOOD_LOG_CACHE_SOURCE,
   HEALTH_DB,
   QUERY_CACHE_TTL_MS,
+  SUGGEST_LIMIT,
   type FdcLookup,
   type FoodLogAi,
   type FoodLogEntry,
   type FoodLogItem,
   type FoodLogResolution,
+  type FoodLogSuggestion,
   type FoodStore,
   type LogFoodOptions,
   type ParsedFoodItem,
@@ -80,6 +82,44 @@ export class FoodLogger {
     });
   }
 
+  async list(from: Date, to: Date): Promise<FoodLogEntry[]> {
+    return this.foodStore.listByEatenAt(from, to);
+  }
+
+  async delete(id: string): Promise<boolean> {
+    return this.foodStore.deleteById(id);
+  }
+
+  async suggest(prefix: string, limit = SUGGEST_LIMIT): Promise<FoodLogSuggestion[]> {
+    const normalized = normalizeQuery(prefix);
+    const entries = await this.queryCache.listRecent({
+      queryPrefix: normalized || undefined,
+      keyPrefix: normalized ? `${QUERY_CACHE_PREFIX}${normalized}` : undefined,
+      limit: Math.max(limit * 2, SUGGEST_LIMIT),
+    });
+    const suggestions: FoodLogSuggestion[] = [];
+    const seen = new Set<string>();
+    for (const entry of entries) {
+      const suggestion = suggestionFromCacheEntry(entry);
+      if (!suggestion) {
+        continue;
+      }
+      const key = normalizeQuery(suggestion.query);
+      if (normalized && !key.startsWith(normalized)) {
+        continue;
+      }
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      suggestions.push(suggestion);
+      if (suggestions.length >= limit) {
+        break;
+      }
+    }
+    return suggestions;
+  }
+
   async close(): Promise<void> {
     if (this.ownsMongo) {
       await this.mongo?.close();
@@ -101,7 +141,7 @@ export class FoodLogger {
 
     const pending = this.resolveFresh(query)
       .then(async (value) => {
-        await this.queryCache.set(key, value, QUERY_CACHE_TTL_MS);
+        await this.queryCache.set(key, cacheResolution(query, value), QUERY_CACHE_TTL_MS);
         return value;
       })
       .finally(() => {

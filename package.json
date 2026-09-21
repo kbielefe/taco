@@ -12,22 +12,32 @@
     }
   },
   "scripts": {
-    "build": "tsc",
-    "typecheck": "tsc --noEmit",
+    "build": "tsc && vite build --config web/vite.config.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "dev": "concurrently -k -n api,ui -c blue,green \"npm run dev:api\" \"npm run dev:ui\"",
+    "dev:api": "node --env-file=.env --watch --import tsx src/web/server.ts",
+    "dev:ui": "vite --config web/vite.config.ts",
+    "start": "node --env-file=.env dist/web/server.js",
+    "mongo:grant-food-delete": "node --env-file=.env --import tsx scripts/grant-food-delete.ts"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "hono": "^4.13.8",
     "mongodb": "^6.20.0",
     "openai": "^7.20.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
+    "concurrently": "^10.0.5",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.2",
+    "vite": "^7.3.6",
     "vitest": "^3.2.4"
   }
 }

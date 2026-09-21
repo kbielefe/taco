@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Collection, Db } from "mongodb";
+import type { Collection, Db, Filter } from "mongodb";
 
 export const FDC_CACHE_SOURCE = "usda-fdc";
 
@@ -17,9 +17,22 @@ export function isNotFoundSentinel(value: unknown): value is typeof NOT_FOUND_SE
   );
 }
 
+export interface CacheListOptions {
+  queryPrefix?: string;
+  keyPrefix?: string;
+  limit?: number;
+}
+
+export interface CacheListEntry {
+  key: string;
+  value: unknown;
+  createdAt: Date;
+}
+
 export interface CacheStore {
   get<T>(key: string): Promise<T | undefined>;
   set(key: string, value: unknown, ttlMs: number, status?: number): Promise<void>;
+  listRecent(options?: CacheListOptions): Promise<CacheListEntry[]>;
 }
 
 export interface FdcCacheDocument {
@@ -32,7 +45,8 @@ export interface FdcCacheDocument {
 }
 
 export class MemoryCacheStore implements CacheStore {
-  private readonly entries = new Map<string, { value: unknown; expiresAt: number }>();
+  private readonly entries = new Map<string, { value: unknown; expiresAt: number; createdAt: number }>();
+  private lastCreatedAt = 0;
 
   async get<T>(key: string): Promise<T | undefined> {
     const entry = this.entries.get(key);
@@ -47,7 +61,26 @@ export class MemoryCacheStore implements CacheStore {
   }
 
   async set(key: string, value: unknown, ttlMs: number): Promise<void> {
-    this.entries.set(key, { value, expiresAt: Date.now() + ttlMs });
+    const createdAt = Math.max(Date.now(), this.lastCreatedAt + 1);
+    this.lastCreatedAt = createdAt;
+    this.entries.set(key, { value, expiresAt: Date.now() + ttlMs, createdAt });
+  }
+
+  async listRecent(options: CacheListOptions = {}): Promise<CacheListEntry[]> {
+    const now = Date.now();
+    const matches: CacheListEntry[] = [];
+    for (const [key, entry] of this.entries) {
+      if (entry.expiresAt <= now) {
+        this.entries.delete(key);
+        continue;
+      }
+      if (!matchesListOptions(key, entry.value, options)) {
+        continue;
+      }
+      matches.push({ key, value: entry.value, createdAt: new Date(entry.createdAt) });
+    }
+    matches.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return matches.slice(0, options.limit ?? 8);
   }
 }
 
@@ -64,6 +97,7 @@ export class MongoCacheStore implements CacheStore {
   ): Promise<MongoCacheStore> {
     const collection = db.collection<FdcCacheDocument>(collectionName);
     await collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    await collection.createIndex({ source: 1, createdAt: -1 });
     return new MongoCacheStore(collection, source);
   }
 
@@ -91,6 +125,30 @@ export class MongoCacheStore implements CacheStore {
     };
     await this.collection.replaceOne({ _id: key }, doc, { upsert: true });
   }
+
+  async listRecent(options: CacheListOptions = {}): Promise<CacheListEntry[]> {
+    const limit = options.limit ?? 8;
+    const filter: Record<string, unknown> = {
+      source: this.source,
+      expiresAt: { $gt: new Date() },
+    };
+    const or: Record<string, unknown>[] = [];
+    if (options.queryPrefix) {
+      or.push({ "value.query": { $regex: `^${escapeRegex(options.queryPrefix)}`, $options: "i" } });
+    }
+    if (options.keyPrefix) {
+      or.push({ _id: { $regex: `^${escapeRegex(options.keyPrefix)}` } });
+    }
+    if (or.length > 0) {
+      filter.$or = or;
+    }
+    const docs = await this.collection
+      .find(filter as Filter<FdcCacheDocument>)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .toArray();
+    return docs.map((doc) => ({ key: doc._id, value: doc.value, createdAt: doc.createdAt }));
+  }
 }
 
 export function foodCacheKey(
@@ -109,6 +167,29 @@ export function listCacheKey(criteria: object): string {
 
 export function searchCacheKey(criteria: object): string {
   return boundedKey("fdc:v1:search:", stableStringify(criteria));
+}
+
+function matchesListOptions(key: string, value: unknown, options: CacheListOptions): boolean {
+  if (!options.queryPrefix && !options.keyPrefix) {
+    return true;
+  }
+  if (options.keyPrefix && key.startsWith(options.keyPrefix)) {
+    return true;
+  }
+  if (options.queryPrefix && value && typeof value === "object" && "query" in value) {
+    const query = (value as { query: unknown }).query;
+    if (typeof query === "string") {
+      const normalized = query.trim().toLowerCase().replace(/\s+/g, " ");
+      if (normalized.startsWith(options.queryPrefix)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function boundedKey(prefix: string, payload: string): string {

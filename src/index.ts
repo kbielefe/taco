@@ -19,7 +19,7 @@ export {
   NOT_FOUND_CACHE_TTL_MS,
   SEARCH_CACHE_TTL_MS,
 } from "./fdc/cache.js";
-export type { CacheStore, FdcCacheDocument } from "./fdc/cache.js";
+export type { CacheListEntry, CacheListOptions, CacheStore, FdcCacheDocument } from "./fdc/cache.js";
 export { DEFAULT_HOURLY_LIMIT, DEMO_KEY_HOURLY_LIMIT, HourlyRateLimiter } from "./fdc/rate-limit.js";
 export { FDC_DATA_TYPES } from "./fdc/types.js";
 export type {
@@ -50,7 +50,7 @@ export { XaiFoodLogAi } from "./log/ai.js";
 export type { XaiFoodLogAiOptions } from "./log/ai.js";
 export { MemoryFoodStore, MongoFoodStore } from "./log/store.js";
 export { FoodLogAiError, FoodLogConfigError, FoodLogError, FoodLogMatchError } from "./log/errors.js";
-export { DEFAULT_FOOD_LOG_MODEL, FOOD_LOG_CACHE_SOURCE, QUERY_CACHE_TTL_MS } from "./log/types.js";
+export { DEFAULT_FOOD_LOG_MODEL, FOOD_LOG_CACHE_SOURCE, QUERY_CACHE_TTL_MS, SUGGEST_LIMIT } from "./log/types.js";
 export type {
   FdcLookup,
   FoodLogAi,
@@ -58,6 +58,7 @@ export type {
   FoodLogItem,
   FoodLogMacros,
   FoodLogResolution,
+  FoodLogSuggestion,
   FoodStore,
   LogFoodOptions,
   MatchCandidate,

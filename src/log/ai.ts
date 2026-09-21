@@ -16,21 +16,30 @@ export interface XaiFoodLogAiOptions {
 }
 
 export class XaiFoodLogAi implements FoodLogAi {
-  private readonly client: OpenAI;
+  private client: OpenAI | undefined;
+  private readonly apiKey: string | undefined;
+  private readonly baseURL: string;
   private readonly model: string;
 
   constructor(options: XaiFoodLogAiOptions = {}) {
-    const apiKey = options.apiKey ?? process.env.XAI_API_KEY;
-    if (!options.client && !apiKey) {
+    this.client = options.client;
+    this.apiKey = options.apiKey ?? process.env.XAI_API_KEY;
+    this.baseURL = options.baseURL ?? DEFAULT_XAI_BASE_URL;
+    this.model = options.model ?? DEFAULT_FOOD_LOG_MODEL;
+  }
+
+  private getClient(): OpenAI {
+    if (this.client) {
+      return this.client;
+    }
+    if (!this.apiKey) {
       throw new FoodLogConfigError("XAI_API_KEY is not set");
     }
-    this.client =
-      options.client ??
-      new OpenAI({
-        apiKey,
-        baseURL: options.baseURL ?? DEFAULT_XAI_BASE_URL,
-      });
-    this.model = options.model ?? DEFAULT_FOOD_LOG_MODEL;
+    this.client = new OpenAI({
+      apiKey: this.apiKey,
+      baseURL: this.baseURL,
+    });
+    return this.client;
   }
 
   async parseQuery(query: string): Promise<ParsedMeal> {
@@ -49,7 +58,7 @@ export class XaiFoodLogAi implements FoodLogAi {
     user: string,
   ): Promise<z.output<S>> {
     try {
-      const completion = await this.client.chat.completions.parse({
+      const completion = await this.getClient().chat.completions.parse({
         model: this.model,
         messages: [
           { role: "system", content: system },

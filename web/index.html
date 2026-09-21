@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Today · Food log</title>
+  </head>
+  <body>
+    <div class="page">
+      <header class="masthead">
+        <h1>Today</h1>
+        <p class="date" id="date-label"></p>
+      </header>
+
+      <section class="totals" aria-labelledby="totals-heading">
+        <h2 id="totals-heading" class="visually-hidden">Today’s totals</h2>
+        <p class="kcal-hero">
+          <span id="total-kcal">0</span>
+          <span class="kcal-unit">kcal</span>
+        </p>
+        <ul class="macro-row">
+          <li class="macro protein">
+            <span class="macro-label" aria-hidden="true">P</span>
+            <span class="visually-hidden">Protein</span>
+            <span class="macro-value"><span id="total-protein">0</span>g</span>
+          </li>
+          <li class="macro fat">
+            <span class="macro-label" aria-hidden="true">F</span>
+            <span class="visually-hidden">Fat</span>
+            <span class="macro-value"><span id="total-fat">0</span>g</span>
+          </li>
+          <li class="macro carb">
+            <span class="macro-label" aria-hidden="true">C</span>
+            <span class="visually-hidden">Carb</span>
+            <span class="macro-value"><span id="total-carb">0</span>g</span>
+          </li>
+          <li class="macro fiber">
+            <span class="macro-label" aria-hidden="true">Fi</span>
+            <span class="visually-hidden">Fiber</span>
+            <span class="macro-value"><span id="total-fiber">0</span>g</span>
+          </li>
+        </ul>
+      </section>
+
+      <form id="log-form" class="composer">
+        <div class="field">
+          <label for="meal">What did you eat?</label>
+          <p id="meal-hint" class="hint">Cheerios and milk, or a banana</p>
+          <p id="meal-error" class="error" hidden></p>
+          <div class="composer-row">
+            <div class="combobox">
+              <input
+                id="meal"
+                name="meal"
+                type="text"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded="false"
+                aria-controls="suggestions"
+                aria-describedby="meal-hint"
+                autocomplete="off"
+                enterkeyhint="send"
+                spellcheck="true"
+              />
+              <ul id="suggestions" role="listbox" hidden></ul>
+            </div>
+            <button type="submit" id="log-button">Log</button>
+          </div>
+          <p id="meal-status" class="status" role="status" aria-live="polite"></p>
+        </div>
+      </form>
+
+      <section class="diary" aria-labelledby="meals-heading">
+        <h2 id="meals-heading" class="visually-hidden">Logged meals</h2>
+        <p id="empty" class="empty">Nothing logged yet</p>
+        <ol id="meals" class="meals"></ol>
+      </section>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

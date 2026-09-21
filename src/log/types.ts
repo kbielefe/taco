@@ -32,6 +32,14 @@ export interface FoodLogResolution {
   items: FoodLogItem[];
 }
 
+export interface FoodLogSuggestion {
+  query: string;
+  description: string;
+  macros: FoodLogMacros;
+}
+
+export const SUGGEST_LIMIT = 8;
+
 export interface FoodLogEntry extends FoodLogResolution {
   _id: ObjectId;
   eatenAt: Date;
@@ -90,6 +98,8 @@ export interface FdcLookup {
 
 export interface FoodStore {
   insert(entry: Omit<FoodLogEntry, "_id">): Promise<FoodLogEntry>;
+  listByEatenAt(from: Date, to: Date): Promise<FoodLogEntry[]>;
+  deleteById(id: string): Promise<boolean>;
 }
 
 export interface LogFoodOptions {

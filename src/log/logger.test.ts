@@ -103,6 +103,11 @@ describe("FoodLogger", () => {
     expect(ai.parseQuery).toHaveBeenCalledOnce();
     expect(ai.selectMatch).toHaveBeenCalledTimes(2);
     expect(fdc.searchFoods).toHaveBeenCalledTimes(2);
+
+    const cached = await queryCache.get<{ query: string }>("food-log:v1:query:cheerios and milk");
+    expect(cached?.query).toBe("Cheerios and milk");
+    const suggestions = await logger.suggest("cheer");
+    expect(suggestions[0]?.query).toBe("Cheerios and milk");
   });
 
   it("does not insert when FDC has no match", async () => {
@@ -167,6 +172,30 @@ describe("FoodLogger", () => {
     await logger.log("banana");
     await logger.log("banana", { skipCache: true });
     expect(ai.parseQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("lists and deletes stored meals", async () => {
+    const banana = jsonFood({ fdcId: 1, description: "Bananas, raw" });
+    const foodStore = new MemoryFoodStore();
+    const logger = new FoodLogger({
+      fdc: mockFdc([banana], { 1: details(1, "Bananas, raw", 89) }),
+      ai: mockAi(meal([{ name: "banana", searchQuery: "banana", servingHint: "1 banana", quantity: 1 }]), {
+        fdcId: 1,
+        grams: 118,
+        servingDescription: "1 banana",
+      }),
+      queryCache: new MemoryCacheStore(),
+      foodStore,
+    });
+
+    const first = await logger.log("banana", { eatenAt: new Date("2026-09-20T08:00:00Z") });
+    await logger.log("banana", { eatenAt: new Date("2026-09-20T12:00:00Z") });
+    await logger.log("banana", { eatenAt: new Date("2026-09-21T08:00:00Z") });
+
+    const today = await logger.list(new Date("2026-09-20T00:00:00Z"), new Date("2026-09-21T00:00:00Z"));
+    expect(today).toHaveLength(2);
+    expect(await logger.delete(first._id.toString())).toBe(true);
+    expect(await logger.list(new Date("2026-09-20T00:00:00Z"), new Date("2026-09-21T00:00:00Z"))).toHaveLength(1);
   });
 
   it("rejects an empty query", async () => {
