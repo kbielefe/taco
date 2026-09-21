@@ -2,6 +2,46 @@ import type { Meal, MealItem } from "./api.js";
 import { formatGrams, formatKcal, formatMacroLine } from "./macros.js";
 import { formatTime } from "./time.js";
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svgIcon(children: SVGElement[]): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.append(...children);
+  return svg;
+}
+
+function svgEl<K extends keyof SVGElementTagNameMap>(
+  name: K,
+  attrs: Record<string, string>,
+): SVGElementTagNameMap[K] {
+  const el = document.createElementNS(SVG_NS, name);
+  for (const [key, value] of Object.entries(attrs)) {
+    el.setAttribute(key, value);
+  }
+  return el;
+}
+
+function detailsIcon(): SVGSVGElement {
+  return svgIcon([
+    svgEl("circle", { cx: "12", cy: "12", r: "10" }),
+    svgEl("path", { d: "M12 16v-4" }),
+    svgEl("path", { d: "M12 8h.01" }),
+  ]);
+}
+
+function deleteIcon(): SVGSVGElement {
+  return svgIcon([
+    svgEl("path", { d: "M3 6h18" }),
+    svgEl("path", { d: "M8 6V4h8v2" }),
+    svgEl("path", { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" }),
+    svgEl("path", { d: "M10 11v6" }),
+    svgEl("path", { d: "M14 11v6" }),
+  ]);
+}
+
 function itemRow(item: MealItem): HTMLLIElement {
   const li = document.createElement("li");
   li.className = "meal-item";
@@ -37,24 +77,36 @@ export function renderMeal(meal: Meal, onDelete: (meal: Meal, row: HTMLLIElement
   time.dateTime = meal.eatenAt;
   time.textContent = formatTime(meal.eatenAt);
 
-  const kcal = document.createElement("p");
-  kcal.className = "meal-kcal";
-  kcal.textContent = `${formatKcal(meal.macros.caloriesKcal)} kcal`;
+  const end = document.createElement("div");
+  end.className = "meal-end";
 
-  top.append(time, kcal);
-
-  const title = document.createElement("h3");
-  title.className = "meal-title";
-  title.textContent = meal.description;
-
-  const actions = document.createElement("div");
-  actions.className = "meal-actions";
-
+  const extraId = `meal-extra-${meal.id}`;
   const details = document.createElement("details");
-  const summary = document.createElement("summary");
-  summary.textContent = "Details";
-  details.append(summary);
+  details.className = "meal-extra";
+  details.id = extraId;
 
+  const summary = document.createElement("summary");
+  summary.className = "visually-hidden";
+  summary.tabIndex = -1;
+  summary.textContent = `Details for ${meal.description}`;
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "icon-button";
+  toggle.setAttribute("aria-label", `Details for ${meal.description}`);
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.setAttribute("aria-controls", extraId);
+  toggle.append(detailsIcon());
+  const syncExpanded = (): void => {
+    toggle.setAttribute("aria-expanded", String(details.open));
+  };
+  toggle.addEventListener("click", () => {
+    details.open = !details.open;
+    syncExpanded();
+  });
+  details.addEventListener("toggle", syncExpanded);
+
+  details.append(summary);
   if (meal.query.trim().toLowerCase() !== meal.description.trim().toLowerCase()) {
     const query = document.createElement("p");
     query.className = "muted meal-query";
@@ -71,15 +123,25 @@ export function renderMeal(meal: Meal, onDelete: (meal: Meal, row: HTMLLIElement
 
   const del = document.createElement("button");
   del.type = "button";
-  del.className = "delete";
-  del.textContent = "Delete";
+  del.className = "icon-button delete";
   del.setAttribute("aria-label", `Delete ${meal.description}`);
+  del.append(deleteIcon());
   del.addEventListener("click", () => {
     onDelete(meal, row);
   });
 
-  actions.append(details, del);
-  article.append(top, title, actions);
+  const kcal = document.createElement("p");
+  kcal.className = "meal-kcal";
+  kcal.textContent = `${formatKcal(meal.macros.caloriesKcal)} kcal`;
+
+  end.append(toggle, del, kcal);
+  top.append(time, end);
+
+  const title = document.createElement("h3");
+  title.className = "meal-title";
+  title.textContent = meal.description;
+
+  article.append(top, title, details);
   row.append(article);
   return row;
 }

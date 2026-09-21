@@ -204,8 +204,7 @@ body {
 
 #meal,
 #log-button,
-.delete,
-summary {
+.icon-button {
   font: inherit;
 }
 
@@ -292,69 +291,84 @@ summary {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.45rem;
 }
 
 .meal {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.9rem 1rem;
+  padding: 0.2rem 0.45rem 0.45rem 0.7rem;
   box-shadow: var(--shadow);
 }
 
 .meal-top {
   display: flex;
   justify-content: space-between;
-  gap: 0.75rem;
-  align-items: baseline;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .meal-top time {
   color: var(--muted);
   font-size: 0.9rem;
+  min-width: 0;
+}
+
+.meal-end {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .meal-kcal {
   margin: 0;
+  padding-inline: 0.15rem 0.2rem;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .meal-title {
-  margin: 0.15rem 0 0.55rem;
+  margin: 0;
   font-size: 1.05rem;
   font-weight: 600;
   letter-spacing: -0.015em;
 }
 
-.meal-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 0.75rem;
-}
-
-details {
-  flex: 1;
-  min-width: 0;
-}
-
-summary {
-  cursor: pointer;
-  color: var(--muted);
-  min-height: 2.75rem;
+.icon-button {
   display: inline-flex;
   align-items: center;
-}
-
-.delete {
-  background: none;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin: 0;
+  padding: 0;
   border: 0;
+  border-radius: 0.5rem;
+  background: none;
   color: var(--muted);
   cursor: pointer;
-  min-height: 2.75rem;
-  padding: 0 0.2rem;
+  flex-shrink: 0;
+}
+
+.icon-button svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-button:hover,
+.icon-button:focus-visible {
+  color: var(--fg);
+}
+
+.icon-button[aria-expanded="true"] {
+  color: var(--accent);
 }
 
 .delete:hover,
@@ -362,13 +376,29 @@ summary {
   color: var(--danger);
 }
 
+.meal-extra {
+  display: none;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+  margin-top: 0.35rem;
+}
+
+.meal-extra[open] {
+  display: flex;
+}
+
+.meal-extra > summary {
+  display: none;
+}
+
 .meal-items {
   list-style: none;
-  margin: 0.5rem 0 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.55rem;
 }
 
 .meal-item-title,
