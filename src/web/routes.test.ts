@@ -320,3 +320,65 @@ describe("journal HTTP API", () => {
     expect(kind.fields.map((field) => field.id)).toEqual(["systolic", "diastolic", "arm"]);
   });
 });
+
+describe("calorie recommendation", () => {
+  function app(env: NodeJS.ProcessEnv = {}) {
+    return createApp({
+      logger: new FoodLogger({
+        fdc: {
+          searchFoods: vi.fn(async () => ({ foods: [] })),
+          getFood: vi.fn(async () => details(1, "x", 1)),
+        },
+        ai: mockAi({ items: [] }, { fdcId: 1, grams: 1, servingDescription: "x" }),
+        queryCache: new MemoryCacheStore(),
+        foodStore: new MemoryFoodStore(),
+      }),
+      journal: new Journal(new MemoryJournalStore()),
+      env,
+    });
+  }
+
+  it("requires today", async () => {
+    const res = await app().request("/api/recommendation");
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: { message: "today is a required ISO date" } });
+  });
+
+  it("asks for the body profile when .env does not have it", async () => {
+    const res = await app().request("/api/recommendation?today=2026-09-21T00:00:00.000Z");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { kcal: number | null; message: string };
+    expect(body.kcal).toBeNull();
+    expect(body.message).toBe("Set BIRTH_YEAR, SEX, and HEIGHT_IN or HEIGHT_CM in .env.");
+  });
+
+  it("asks for a weight once the profile is set", async () => {
+    const res = await app({ BIRTH_YEAR: "1980", SEX: "male", HEIGHT_IN: "70" }).request(
+      "/api/recommendation?today=2026-09-21T00:00:00.000Z",
+    );
+    const body = (await res.json()) as { kcal: number | null; message: string };
+    expect(body.kcal).toBeNull();
+    expect(body.message).toMatch(/Log a weight/);
+  });
+
+  it("recommends from a weight logged in pounds", async () => {
+    const api = app({ BIRTH_YEAR: "1980", SEX: "male", HEIGHT_IN: "70" });
+    const created = await api.request("/api/journal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        at: "2026-09-20T15:00:00.000Z",
+        kind: { label: "weight", fields: [{ label: "weight", type: "number", unit: "pounds" }] },
+        values: [{ fieldId: "weight", value: 313 }],
+      }),
+    });
+    expect(created.status).toBe(201);
+
+    const res = await api.request("/api/recommendation?today=2026-09-21T00:00:00.000Z");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { kcal: number; goal: string; basis: string };
+    expect(body.kcal).toBe(1770);
+    expect(body.goal).toBe("lose");
+    expect(body.basis).toBe("body");
+  });
+});

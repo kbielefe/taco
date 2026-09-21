@@ -145,6 +145,20 @@ body {
   letter-spacing: 0;
 }
 
+.kcal-target {
+  margin: 0.35rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.kcal-target-note {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
 .macro-row {
   list-style: none;
   margin: 0.85rem 0 0;

@@ -61,6 +61,11 @@ services:
       MONGODB_URI: mongodb://${MONGO_CACHE_USERNAME}:${MONGO_CACHE_PASSWORD}@mongodb:27017/health?authSource=health
       USDA_API_KEY: ${USDA_API_KEY:?USDA_API_KEY is required}
       XAI_API_KEY: ${XAI_API_KEY:-}
+      BIRTH_YEAR: ${BIRTH_YEAR:-}
+      SEX: ${SEX:-}
+      HEIGHT_IN: ${HEIGHT_IN:-}
+      HEIGHT_CM: ${HEIGHT_CM:-}
+      ACTIVITY: ${ACTIVITY:-}
     depends_on:
       mongodb:
         condition: service_healthy
@@ -76,6 +81,17 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  cloudflared:
+    image: docker.io/cloudflare/cloudflared:latest
+    container_name: health-tracker-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN is required}
+    depends_on:
+      web:
+        condition: service_healthy
 
 volumes:
   mongodb_data:

@@ -1,5 +1,7 @@
 import { Hono } from "hono";
 import { stream } from "hono/streaming";
+import { energyWindow, recommendDay } from "../energy/recommend.js";
+import { readBodyProfile } from "../energy/profile.js";
 import { JournalConflictError, JournalNotFoundError, JournalValidationError } from "../journal/errors.js";
 import type { Journal } from "../journal/journal.js";
 import { FoodLogAiError, FoodLogConfigError, FoodLogMatchError } from "../log/errors.js";
@@ -26,9 +28,10 @@ function publicErrorMessage(error: unknown): { message: string; status: 400 | 42
 export interface AppDeps {
   logger: FoodLogger;
   journal: Journal;
+  env?: NodeJS.ProcessEnv;
 }
 
-export function createApp({ logger, journal }: AppDeps): Hono {
+export function createApp({ logger, journal, env = process.env }: AppDeps): Hono {
   const app = new Hono();
 
   app.onError((error, c) => {
@@ -110,6 +113,31 @@ export function createApp({ logger, journal }: AppDeps): Hono {
   app.get("/api/suggestions", async (c) => {
     const suggestions = await logger.suggest(c.req.query("q") ?? "");
     return c.json({ suggestions });
+  });
+
+  app.get("/api/recommendation", async (c) => {
+    const today = parseIsoDate(c.req.query("today"));
+    if (!today) {
+      return c.json({ error: { message: "today is a required ISO date" } }, 400);
+    }
+    const range = energyWindow(today);
+    const [meals, observations] = await Promise.all([
+      logger.list(range.from, today),
+      journal.list(range.historyFrom, range.until),
+    ]);
+    return c.json(
+      recommendDay({
+        profile: readBodyProfile(env, today),
+        today,
+        intakes: meals.map((meal) => ({ eatenAt: meal.eatenAt, kcal: meal.macros.caloriesKcal })),
+        observations: observations.map((view) => ({
+          at: view.observation.at,
+          kindLabel: view.kind.label,
+          fields: view.kind.fields,
+          values: view.observation.values,
+        })),
+      }),
+    );
   });
 
   app.get("/api/journal/kinds", async (c) => {

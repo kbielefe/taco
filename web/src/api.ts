@@ -57,6 +57,25 @@ async function readError(response: Response): Promise<ApiError> {
   return new ApiError("Something went wrong. Try again.", response.status);
 }
 
+export interface EnergyRecommendation {
+  kcal: number | null;
+  message: string;
+  goal: "lose" | "maintain" | null;
+  basis: "week" | "partial" | "body" | null;
+  limitedByMinimum: boolean;
+  minimumKcal: number | null;
+  bmi: number | null;
+}
+
+export async function fetchEnergy(today: Date): Promise<EnergyRecommendation> {
+  const params = new URLSearchParams({ today: today.toISOString() });
+  const response = await fetch(`/api/recommendation?${params}`);
+  if (!response.ok) {
+    throw await readError(response);
+  }
+  return response.json() as Promise<EnergyRecommendation>;
+}
+
 export async function fetchMeals(from: Date, to: Date): Promise<{ meals: Meal[]; totals: Macros }> {
   const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
   const response = await fetch(`/api/meals?${params}`);

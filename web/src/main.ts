@@ -1,4 +1,13 @@
-import { deleteMeal, fetchMeals, fetchSuggestions, logMeal, type Macros, type Meal } from "./api.js";
+import {
+  deleteMeal,
+  fetchEnergy,
+  fetchMeals,
+  fetchSuggestions,
+  logMeal,
+  type EnergyRecommendation,
+  type Macros,
+  type Meal,
+} from "./api.js";
 import { mountCombobox } from "./combobox.js";
 import { mountJournal } from "./journal.js";
 import { emptyMacros, formatGrams, formatKcal, sumMacros } from "./macros.js";
@@ -24,6 +33,8 @@ const nodes = {
   totalFat: required(document.querySelector<HTMLSpanElement>("#total-fat"), "total-fat"),
   totalCarb: required(document.querySelector<HTMLSpanElement>("#total-carb"), "total-carb"),
   totalFiber: required(document.querySelector<HTMLSpanElement>("#total-fiber"), "total-fiber"),
+  calorieTarget: required(document.querySelector<HTMLParagraphElement>("#calorie-target"), "calorie-target"),
+  calorieNote: required(document.querySelector<HTMLParagraphElement>("#calorie-target-note"), "calorie-target-note"),
   form: required(document.querySelector<HTMLFormElement>("#log-form"), "log-form"),
   input: required(document.querySelector<HTMLInputElement>("#meal"), "meal"),
   listbox: required(document.querySelector<HTMLUListElement>("#suggestions"), "suggestions"),
@@ -35,6 +46,9 @@ const nodes = {
 };
 
 let meals: Meal[] = [];
+let recommendation: EnergyRecommendation | undefined;
+let recommendationProblem: string | undefined;
+let energyReady = false;
 
 function paintTotals(macros: Macros): void {
   nodes.totalKcal.textContent = formatKcal(macros.caloriesKcal);
@@ -42,6 +56,34 @@ function paintTotals(macros: Macros): void {
   nodes.totalFat.textContent = formatGrams(macros.fatG);
   nodes.totalCarb.textContent = formatGrams(macros.carbG);
   nodes.totalFiber.textContent = formatGrams(macros.fiberG);
+  paintRecommendation(macros.caloriesKcal);
+}
+
+function paintRecommendation(eatenKcal: number): void {
+  if (recommendationProblem) {
+    nodes.calorieTarget.hidden = true;
+    nodes.calorieTarget.textContent = "";
+    nodes.calorieNote.hidden = false;
+    nodes.calorieNote.textContent = recommendationProblem;
+    return;
+  }
+  if (!recommendation) {
+    nodes.calorieTarget.hidden = true;
+    nodes.calorieNote.hidden = true;
+    return;
+  }
+  if (recommendation.kcal === null) {
+    nodes.calorieTarget.hidden = true;
+    nodes.calorieTarget.textContent = "";
+  } else {
+    const left = recommendation.kcal - eatenKcal;
+    const progress =
+      eatenKcal > 0 ? (left >= 0 ? ` · ${formatKcal(left)} left` : ` · ${formatKcal(-left)} over`) : "";
+    nodes.calorieTarget.hidden = false;
+    nodes.calorieTarget.textContent = `Recommended ${formatKcal(recommendation.kcal)} kcal${progress}`;
+  }
+  nodes.calorieNote.hidden = recommendation.message === "";
+  nodes.calorieNote.textContent = recommendation.message;
 }
 
 function paintList(): void {
@@ -150,6 +192,9 @@ function show(view: "food" | "journal"): void {
       link.removeAttribute("aria-current");
     }
   }
+  if (view === "food" && energyReady) {
+    void refreshEnergy();
+  }
   if (view === "journal") {
     void journal.load();
   }
@@ -180,6 +225,18 @@ window.addEventListener("popstate", () => {
   show(viewFromPath(location.pathname));
 });
 
+async function refreshEnergy(): Promise<void> {
+  try {
+    const { from } = localDayRange();
+    recommendation = await fetchEnergy(from);
+    recommendationProblem = undefined;
+  } catch (error) {
+    recommendation = undefined;
+    recommendationProblem = error instanceof Error ? error.message : "Couldn't load a calorie recommendation.";
+  }
+  paintRecommendation(sumMacros(meals.map((meal) => meal.macros)).caloriesKcal);
+}
+
 async function load(): Promise<void> {
   nodes.dateLabel.textContent = formatDay(new Date());
   paintTotals(emptyMacros);
@@ -191,6 +248,8 @@ async function load(): Promise<void> {
   } catch (error) {
     setError(error instanceof Error ? error.message : "Couldn't load today's meals.");
   }
+  await refreshEnergy();
+  energyReady = true;
 }
 
 const journal = mountJournal();

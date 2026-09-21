@@ -44,6 +44,10 @@ export type {
   SRLegacyFoodItem,
   SurveyFoodItem,
 } from "./fdc/types.js";
+export { readBodyProfile } from "./energy/profile.js";
+export type { ActivityLevel, BodyProfile, ProfileRead, Sex } from "./energy/profile.js";
+export { recommendDay } from "./energy/recommend.js";
+export type { DayRecommendation, IntakeSample, WeightObservation } from "./energy/recommend.js";
 export { createJournal, Journal } from "./journal/journal.js";
 export type { AppendKindInput, CreateJournalOptions, JournalKindView, JournalObservationView, LogJournalInput, NewKindInput } from "./journal/journal.js";
 export { JournalConflictError, JournalConfigError, JournalError, JournalNotFoundError, JournalValidationError } from "./journal/errors.js";
