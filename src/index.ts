@@ -44,3 +44,25 @@ export type {
   SRLegacyFoodItem,
   SurveyFoodItem,
 } from "./fdc/types.js";
+export { createFoodLogger, FoodLogger } from "./log/logger.js";
+export type { CreateFoodLoggerOptions, FoodLoggerOptions } from "./log/logger.js";
+export { XaiFoodLogAi } from "./log/ai.js";
+export type { XaiFoodLogAiOptions } from "./log/ai.js";
+export { MemoryFoodStore, MongoFoodStore } from "./log/store.js";
+export { FoodLogAiError, FoodLogConfigError, FoodLogError, FoodLogMatchError } from "./log/errors.js";
+export { DEFAULT_FOOD_LOG_MODEL, FOOD_LOG_CACHE_SOURCE, QUERY_CACHE_TTL_MS } from "./log/types.js";
+export type {
+  FdcLookup,
+  FoodLogAi,
+  FoodLogEntry,
+  FoodLogItem,
+  FoodLogMacros,
+  FoodLogResolution,
+  FoodStore,
+  LogFoodOptions,
+  MatchCandidate,
+  ParsedFoodItem,
+  ParsedMeal,
+  SelectMatchInput,
+  SelectedMatch,
+} from "./log/types.js";

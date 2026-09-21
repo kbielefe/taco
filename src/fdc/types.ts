@@ -295,6 +295,7 @@ export interface SurveyFoodItem {
   publicationDate?: string;
   startDate?: string;
   foodAttributes?: FoodAttribute[];
+  foodNutrients?: FoodNutrient[];
   foodPortions?: FoodPortion[];
   inputFoods?: InputFoodSurvey[];
   wweiaFoodCategory?: WweiaFoodCategory;

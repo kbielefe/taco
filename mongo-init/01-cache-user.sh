@@ -38,18 +38,49 @@ try {
   });
 }
 
+try {
+  health.createRole({
+    role: "foodLog",
+    privileges: [
+      {
+        resource: { db: "health", collection: "food" },
+        actions: ["find", "insert", "update", "createIndex", "listIndexes"],
+      },
+    ],
+    roles: [],
+  });
+} catch (error) {
+  if (error.codeName !== "DuplicateKey" && !/already exists/i.test(String(error.message))) {
+    throw error;
+  }
+  health.updateRole("foodLog", {
+    privileges: [
+      {
+        resource: { db: "health", collection: "food" },
+        actions: ["find", "insert", "update", "createIndex", "listIndexes"],
+      },
+    ],
+    roles: [],
+  });
+}
+
+const appRoles = [
+  { role: "cacheOnly", db: "health" },
+  { role: "foodLog", db: "health" },
+];
+
 const existingUsers = health.getUsers().users ?? [];
 const exists = existingUsers.some((user) => user.user === "${MONGO_CACHE_USERNAME}");
 if (!exists) {
   health.createUser({
     user: "${MONGO_CACHE_USERNAME}",
     pwd: "${MONGO_CACHE_PASSWORD}",
-    roles: [{ role: "cacheOnly", db: "health" }],
+    roles: appRoles,
   });
 } else {
   health.updateUser("${MONGO_CACHE_USERNAME}", {
     pwd: "${MONGO_CACHE_PASSWORD}",
-    roles: [{ role: "cacheOnly", db: "health" }],
+    roles: appRoles,
   });
 }
 EOF

@@ -21,7 +21,9 @@
     "node": ">=20"
   },
   "dependencies": {
-    "mongodb": "^6.20.0"
+    "mongodb": "^6.20.0",
+    "openai": "^7.20.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",

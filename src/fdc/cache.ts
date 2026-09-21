@@ -24,7 +24,7 @@ export interface CacheStore {
 
 export interface FdcCacheDocument {
   _id: string;
-  source: typeof FDC_CACHE_SOURCE;
+  source: string;
   status: number;
   value: unknown;
   createdAt: Date;
@@ -52,18 +52,25 @@ export class MemoryCacheStore implements CacheStore {
 }
 
 export class MongoCacheStore implements CacheStore {
-  constructor(private readonly collection: Collection<FdcCacheDocument>) {}
+  constructor(
+    private readonly collection: Collection<FdcCacheDocument>,
+    private readonly source: string = FDC_CACHE_SOURCE,
+  ) {}
 
-  static async connect(db: Db, collectionName = "cache"): Promise<MongoCacheStore> {
+  static async connect(
+    db: Db,
+    collectionName = "cache",
+    source: string = FDC_CACHE_SOURCE,
+  ): Promise<MongoCacheStore> {
     const collection = db.collection<FdcCacheDocument>(collectionName);
     await collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-    return new MongoCacheStore(collection);
+    return new MongoCacheStore(collection, source);
   }
 
   async get<T>(key: string): Promise<T | undefined> {
     const doc = await this.collection.findOne({
       _id: key,
-      source: FDC_CACHE_SOURCE,
+      source: this.source,
       expiresAt: { $gt: new Date() },
     });
     if (!doc) {
@@ -76,7 +83,7 @@ export class MongoCacheStore implements CacheStore {
     const now = new Date();
     const doc: FdcCacheDocument = {
       _id: key,
-      source: FDC_CACHE_SOURCE,
+      source: this.source,
       status,
       value,
       createdAt: now,
