@@ -67,6 +67,20 @@ describe("Journal", () => {
     ]);
   });
 
+  it("reads one entry by id", async () => {
+    const journal = service();
+    const weight = await journal.log({
+      at: day,
+      kind: { label: "Weight", fields: [{ label: "Weight", type: "number", unit: "lb" }] },
+      values: [{ fieldId: "Weight", value: 315 }],
+    });
+    const found = await journal.get(weight.observation._id.toHexString());
+    expect(found?.kind.label).toBe("Weight");
+    expect(found?.observation.values[0]?.value).toBe(315);
+    expect(await journal.get("0".repeat(24))).toBeNull();
+    expect(await journal.get("not-an-id")).toBeNull();
+  });
+
   it("rejects a duplicate name and rolls back a kind if the entry fails", async () => {
     const journal = service();
     await journal.log({

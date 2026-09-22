@@ -1,13 +1,15 @@
 import { Hono } from "hono";
 import { stream } from "hono/streaming";
+import { isWeighIn, type CorrectionRunner } from "../correct/run.js";
 import { energyWindow, recommendDay } from "../energy/recommend.js";
 import { readBodyProfile } from "../energy/profile.js";
 import { JournalConflictError, JournalNotFoundError, JournalValidationError } from "../journal/errors.js";
 import type { Journal } from "../journal/journal.js";
 import { FoodLogAiError, FoodLogConfigError, FoodLogMatchError } from "../log/errors.js";
 import type { FoodLogger } from "../log/logger.js";
+import type { FoodLogEntry } from "../log/types.js";
 import { sumMacros } from "../log/nutrients.js";
-import { parseIsoDate, serializeKind, serializeMeal, serializeObservation } from "./serialize.js";
+import { parseIsoDate, serializeKind, serializeMeal, serializeObservation, type MealJson } from "./serialize.js";
 
 function publicErrorMessage(error: unknown): { message: string; status: 400 | 422 | 500 | 503 } {
   if (error instanceof FoodLogConfigError && /query is required/i.test(error.message)) {
@@ -28,10 +30,15 @@ function publicErrorMessage(error: unknown): { message: string; status: 400 | 42
 export interface AppDeps {
   logger: FoodLogger;
   journal: Journal;
+  corrections?: CorrectionRunner;
   env?: NodeJS.ProcessEnv;
 }
 
-export function createApp({ logger, journal, env = process.env }: AppDeps): Hono {
+export function createApp({ logger, journal, corrections, env = process.env }: AppDeps): Hono {
+  const presentMeal = async (entry: FoodLogEntry): Promise<MealJson> => {
+    const fit = corrections ? await corrections.current() : null;
+    return serializeMeal(entry, fit);
+  };
   const app = new Hono();
 
   app.onError((error, c) => {
@@ -49,9 +56,11 @@ export function createApp({ logger, journal, env = process.env }: AppDeps): Hono
       return c.json({ error: { message: "from and to are required ISO dates" } }, 400);
     }
     const meals = await logger.list(from, to);
+    const fit = corrections ? await corrections.current() : null;
     return c.json({
-      meals: meals.map(serializeMeal),
+      meals: meals.map((meal) => serializeMeal(meal, fit)),
       totals: sumMacros(meals.map((meal) => meal.macros)),
+      ...(corrections?.pending() ? { correctionPending: true } : {}),
     });
   });
 
@@ -70,7 +79,7 @@ export function createApp({ logger, journal, env = process.env }: AppDeps): Hono
     if (!wantsProgressStream(c.req.header("accept"))) {
       try {
         const entry = await logger.log(query, logOptions);
-        return c.json(serializeMeal(entry), 201);
+        return c.json(await presentMeal(entry), 201);
       } catch (error) {
         const mapped = publicErrorMessage(error);
         if (mapped.status === 500) {
@@ -91,7 +100,7 @@ export function createApp({ logger, journal, env = process.env }: AppDeps): Hono
             await out.writeln(JSON.stringify({ type: "progress", message }));
           },
         });
-        await out.writeln(JSON.stringify({ type: "result", meal: serializeMeal(entry) }));
+        await out.writeln(JSON.stringify({ type: "result", meal: await presentMeal(entry) }));
       } catch (error) {
         const mapped = publicErrorMessage(error);
         if (mapped.status === 500) {
@@ -201,6 +210,9 @@ export function createApp({ logger, journal, env = process.env }: AppDeps): Hono
         ...(at ? { at } : {}),
         values: body.values,
       });
+      if (isWeighIn(view)) {
+        corrections?.schedule({ timeZone: typeof body.timeZone === "string" ? body.timeZone : undefined });
+      }
       return c.json(serializeObservation(view), 201);
     } catch (error) {
       const mapped = journalHttpError(error);
@@ -212,9 +224,14 @@ export function createApp({ logger, journal, env = process.env }: AppDeps): Hono
   });
 
   app.delete("/api/journal/:id", async (c) => {
-    const deleted = await journal.delete(c.req.param("id"));
+    const id = c.req.param("id");
+    const existing = await journal.get(id);
+    const deleted = await journal.delete(id);
     if (!deleted) {
       return c.body(null, 404);
+    }
+    if (existing && isWeighIn(existing)) {
+      corrections?.schedule({ timeZone: c.req.query("timeZone") });
     }
     return c.body(null, 204);
   });

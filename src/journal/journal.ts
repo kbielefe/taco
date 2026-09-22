@@ -120,6 +120,18 @@ export class Journal {
     return this.store.deleteObservation(id);
   }
 
+  async get(id: string): Promise<JournalObservationView | null> {
+    const observation = await this.store.findObservation(id);
+    if (!observation) {
+      return null;
+    }
+    const kind = await this.store.findKind(observation.kindId.toHexString());
+    if (!kind) {
+      return null;
+    }
+    return { observation, kind };
+  }
+
   async kinds(): Promise<JournalKindView[]> {
     const [kinds, observations] = await Promise.all([this.store.listKinds(), this.store.listAllObservations()]);
     return kinds

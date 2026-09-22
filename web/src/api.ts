@@ -1,9 +1,16 @@
+import { localTimeZone } from "./time.js";
+
 export interface Macros {
   caloriesKcal: number;
   proteinG: number;
   fatG: number;
   carbG: number;
   fiberG: number;
+}
+
+export interface ItemCorrection {
+  factor: number;
+  label: string;
 }
 
 export interface MealItem {
@@ -14,6 +21,7 @@ export interface MealItem {
   grams: number;
   servingDescription: string;
   macros: Macros;
+  correction?: ItemCorrection;
 }
 
 export interface Meal {
@@ -23,6 +31,7 @@ export interface Meal {
   query: string;
   description: string;
   macros: Macros;
+  adjusted?: Macros;
   items: MealItem[];
 }
 
@@ -76,13 +85,16 @@ export async function fetchEnergy(today: Date): Promise<EnergyRecommendation> {
   return response.json() as Promise<EnergyRecommendation>;
 }
 
-export async function fetchMeals(from: Date, to: Date): Promise<{ meals: Meal[]; totals: Macros }> {
+export async function fetchMeals(
+  from: Date,
+  to: Date,
+): Promise<{ meals: Meal[]; totals: Macros; correctionPending?: boolean }> {
   const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
   const response = await fetch(`/api/meals?${params}`);
   if (!response.ok) {
     throw await readError(response);
   }
-  return response.json() as Promise<{ meals: Meal[]; totals: Macros }>;
+  return response.json() as Promise<{ meals: Meal[]; totals: Macros; correctionPending?: boolean }>;
 }
 
 export async function logMeal(
@@ -264,7 +276,7 @@ export async function logJournal(body: {
   const response = await fetch("/api/journal", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, timeZone: localTimeZone() }),
   });
   if (!response.ok) {
     throw await readError(response);
@@ -288,7 +300,8 @@ export async function appendKind(
 }
 
 export async function deleteJournalEntry(id: string): Promise<void> {
-  const response = await fetch(`/api/journal/${id}`, { method: "DELETE" });
+  const params = new URLSearchParams({ timeZone: localTimeZone() });
+  const response = await fetch(`/api/journal/${id}?${params}`, { method: "DELETE" });
   if (!response.ok) {
     throw await readError(response);
   }

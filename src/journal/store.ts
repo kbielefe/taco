@@ -72,6 +72,10 @@ export class MemoryJournalStore implements JournalStore {
     return stored;
   }
 
+  async findObservation(id: string): Promise<JournalObservation | null> {
+    return this.observations.find((entry) => entry._id.toHexString() === id) ?? null;
+  }
+
   async listObservations(from: Date, to: Date): Promise<JournalObservation[]> {
     return this.observations.filter((entry) => inRange(entry, from, to)).slice().sort(byAtDesc);
   }
@@ -146,6 +150,13 @@ export class MongoJournalStore implements JournalStore {
   async insertObservation(entry: Omit<JournalObservation, "_id">): Promise<JournalObservation> {
     const result = await this.observations.insertOne(entry as JournalObservation);
     return { ...entry, _id: result.insertedId };
+  }
+
+  async findObservation(id: string): Promise<JournalObservation | null> {
+    if (!OBJECT_ID.test(id)) {
+      return null;
+    }
+    return this.observations.findOne({ _id: new ObjectId(id) });
   }
 
   async listObservations(from: Date, to: Date): Promise<JournalObservation[]> {

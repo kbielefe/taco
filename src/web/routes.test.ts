@@ -1,12 +1,18 @@
+import { ObjectId } from "mongodb";
 import { describe, expect, it, vi } from "vitest";
+import { createCorrectionRunner, type CorrectionRunner } from "../correct/run.js";
+import { correctedMacros, fitEnergyWindows, type CorrectionFit } from "../correct/fit.js";
 import { MemoryCacheStore } from "../fdc/cache.js";
 import type { FoodItem, SearchResult, SearchResultFood } from "../fdc/types.js";
 import { Journal } from "../journal/journal.js";
 import { MemoryJournalStore } from "../journal/store.js";
 import { FoodLogger } from "../log/logger.js";
+import { sumMacros } from "../log/nutrients.js";
 import { MemoryFoodStore } from "../log/store.js";
-import type { FoodLogAi, ParsedMeal, SelectMatchInput, SelectedMatch } from "../log/types.js";
+import type { FoodLogAi, FoodLogEntry, ParsedMeal, SelectMatchInput, SelectedMatch } from "../log/types.js";
+import { MemoryCorrectionStore } from "../correct/store.js";
 import { createApp } from "./routes.js";
+import { serializeMeal } from "./serialize.js";
 
 function jsonFood(overrides: Partial<SearchResultFood> & Pick<SearchResultFood, "fdcId" | "description">): SearchResultFood {
   return { dataType: "SR Legacy", score: 100, ...overrides };
@@ -34,7 +40,7 @@ function mockAi(parsed: ParsedMeal, match: SelectedMatch): FoodLogAi {
   };
 }
 
-function testApp() {
+function testApp(options: { corrections?: CorrectionRunner } = {}) {
   const foodStore = new MemoryFoodStore();
   const queryCache = new MemoryCacheStore();
   const logger = new FoodLogger({
@@ -49,7 +55,11 @@ function testApp() {
     queryCache,
     foodStore,
   });
-  return { app: createApp({ logger, journal: new Journal(new MemoryJournalStore()) }), logger, foodStore };
+  return {
+    app: createApp({ logger, journal: new Journal(new MemoryJournalStore()), corrections: options.corrections }),
+    logger,
+    foodStore,
+  };
 }
 
 describe("food log HTTP API", () => {
@@ -71,12 +81,15 @@ describe("food log HTTP API", () => {
     const meal = await created.json();
     expect(meal.query).toBe("banana");
     expect(meal.macros.caloriesKcal).toBeGreaterThan(0);
+    expect(meal).not.toHaveProperty("adjusted");
 
     const listed = await app.request("/api/meals?from=2026-09-20T00:00:00.000Z&to=2026-09-21T00:00:00.000Z");
     expect(listed.status).toBe(200);
     const body = await listed.json();
     expect(body.meals).toHaveLength(1);
     expect(body.totals.caloriesKcal).toBe(meal.macros.caloriesKcal);
+    expect(body).not.toHaveProperty("correctionPending");
+    expect(body.meals[0]).not.toHaveProperty("adjusted");
   });
 
   it("rejects an empty query", async () => {
@@ -380,5 +393,194 @@ describe("calorie recommendation", () => {
     expect(body.kcal).toBe(1770);
     expect(body.goal).toBe("lose");
     expect(body.basis).toBe("body");
+  });
+});
+
+describe("calorie correction", () => {
+  const env = { BIRTH_YEAR: "1980", SEX: "male", HEIGHT_IN: "70" };
+
+  function weightBody(timeZone = "UTC"): string {
+    return JSON.stringify({
+      at: "2026-09-20T15:00:00.000Z",
+      timeZone,
+      kind: { label: "weight", fields: [{ label: "weight", type: "number", unit: "kg" }] },
+      values: [{ fieldId: "weight", value: 80 }],
+    });
+  }
+
+  it("returns a weigh-in before the fit starts and marks the list pending", async () => {
+    let started = false;
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const store = new MemoryCorrectionStore();
+    const corrections = createCorrectionRunner({
+      store,
+      env,
+      load: async () => {
+        started = true;
+        await gate;
+        return { meals: [], observations: [] };
+      },
+    });
+    const { app } = testApp({ corrections });
+    try {
+      const created = await app.request("/api/journal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: weightBody(),
+      });
+      expect(created.status).toBe(201);
+      expect(started).toBe(false);
+      expect(corrections.pending()).toBe(true);
+      const listed = await app.request("/api/meals?from=2026-09-20T00:00:00.000Z&to=2026-09-21T00:00:00.000Z");
+      const body = (await listed.json()) as { correctionPending?: boolean };
+      expect(body.correctionPending).toBe(true);
+    } finally {
+      release();
+      await corrections.whenIdle();
+    }
+    const saved = await store.read();
+    expect(saved?.timeZone).toBe("UTC");
+    expect(saved?.fit.fitted).toBe(false);
+  });
+
+  it("fits a weigh-in again when it is deleted, and ignores other entries", async () => {
+    let runs = 0;
+    const corrections = createCorrectionRunner({
+      store: new MemoryCorrectionStore(),
+      env,
+      load: async () => {
+        runs += 1;
+        return { meals: [], observations: [] };
+      },
+    });
+    const { app } = testApp({ corrections });
+    const weight = await app.request("/api/journal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: weightBody(),
+    });
+    const weightId = ((await weight.json()) as { id: string }).id;
+    await corrections.whenIdle();
+    expect(runs).toBe(1);
+
+    const migraine = await app.request("/api/journal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: { label: "Migraine", fields: [{ label: "Course", type: "enum", options: ["started", "gone"] }] },
+        values: [{ fieldId: "Course", value: "gone" }],
+      }),
+    });
+    expect(migraine.status).toBe(201);
+    const migraineId = ((await migraine.json()) as { id: string }).id;
+    await corrections.whenIdle();
+    expect(runs).toBe(1);
+
+    const removedNote = await app.request(`/api/journal/${migraineId}?timeZone=UTC`, { method: "DELETE" });
+    expect(removedNote.status).toBe(204);
+    await corrections.whenIdle();
+    expect(runs).toBe(1);
+
+    const removedWeight = await app.request(`/api/journal/${weightId}?timeZone=UTC`, { method: "DELETE" });
+    expect(removedWeight.status).toBe(204);
+    await corrections.whenIdle();
+    expect(runs).toBe(2);
+  });
+
+  it("applies a stored fit on the logged meal and the list, and keeps logged totals", async () => {
+    const fit = fitEnergyWindows([]);
+    fit.expenditureFactor = 2;
+    fit.foods = [
+      {
+        id: "discrete\tbanana",
+        key: "banana",
+        category: "discrete",
+        delta: 0,
+        factor: 1.1,
+        low: 1.05,
+        high: 1.2,
+        applied: 1.1,
+        excludesOne: true,
+      },
+    ];
+    const corrections: CorrectionRunner = {
+      schedule() {},
+      current: async () => fit,
+      pending: () => false,
+      whenIdle: async () => {},
+      close: async () => {},
+    };
+    const { app } = testApp({ corrections });
+    const created = await app.request("/api/meals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "banana", eatenAt: "2026-09-20T12:00:00.000Z" }),
+    });
+    expect(created.status).toBe(201);
+    const meal = (await created.json()) as {
+      macros: { caloriesKcal: number };
+      adjusted: { caloriesKcal: number };
+      items: { name: string; dataType: string; grams: number; servingDescription: string; macros: FoodLogEntry["items"][number]["macros"]; correction: { factor: number; label: string } }[];
+    };
+    const item = meal.items[0];
+    expect(item?.correction).toEqual({ factor: 1.1, label: "its own factor" });
+    expect(item).toBeDefined();
+    if (!item) {
+      return;
+    }
+    const adjusted = sumMacros([
+      correctedMacros(
+        { name: item.name, dataType: item.dataType, grams: item.grams, servingDescription: item.servingDescription, macros: item.macros },
+        fit,
+      ),
+    ]);
+    expect(meal.adjusted).toEqual(adjusted);
+    expect(meal.adjusted.caloriesKcal).not.toBe(meal.macros.caloriesKcal);
+
+    const listed = await app.request("/api/meals?from=2026-09-20T00:00:00.000Z&to=2026-09-21T00:00:00.000Z");
+    const body = (await listed.json()) as { meals: { adjusted: { caloriesKcal: number } }[]; totals: { caloriesKcal: number }; correctionPending?: boolean };
+    expect(body.meals[0]?.adjusted.caloriesKcal).toBe(meal.adjusted.caloriesKcal);
+    expect(body.totals.caloriesKcal).toBe(meal.macros.caloriesKcal);
+    expect(body.correctionPending).toBeUndefined();
+  });
+
+  it("names the food's kind when the factor is not its own, and ignores the burn multiplier", () => {
+    const macros = { caloriesKcal: 105, proteinG: 1.3, fatG: 0.4, carbG: 27, fiberG: 3 };
+    const entry: FoodLogEntry = {
+      _id: new ObjectId(),
+      eatenAt: new Date("2026-09-20T12:00:00.000Z"),
+      createdAt: new Date("2026-09-20T12:00:00.000Z"),
+      query: "banana",
+      description: "banana (1 banana)",
+      macros,
+      items: [{ name: "banana", fdcId: 1, description: "Bananas, raw", dataType: "SR Legacy", grams: 118, servingDescription: "1 banana", macros }],
+    };
+    expect(serializeMeal(entry).adjusted).toBeUndefined();
+    expect(serializeMeal(entry).items[0]).not.toHaveProperty("correction");
+
+    const fit: CorrectionFit = fitEnergyWindows([]);
+    fit.expenditureFactor = 2;
+    const kind = fit.categories.find((category) => category.category === "discrete");
+    expect(kind).toBeDefined();
+    if (!kind) {
+      return;
+    }
+    kind.applied = 1.25;
+    const meal = serializeMeal(entry, fit);
+    expect(meal.items[0]?.correction).toEqual({ factor: 1.25, label: "counted food" });
+    expect(meal.adjusted).toEqual(
+      sumMacros([
+        correctedMacros(
+          { name: "banana", dataType: "SR Legacy", grams: 118, servingDescription: "1 banana", macros },
+          fit,
+        ),
+      ]),
+    );
+    expect(meal.macros).toEqual(macros);
+    kind.applied = 1;
+    expect(serializeMeal(entry, fit).adjusted).toEqual(macros);
   });
 });

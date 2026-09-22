@@ -1,6 +1,27 @@
+import { correctionFor, correctedMacros, type CorrectionFit, type ItemCorrection } from "../correct/fit.js";
+import type { Category } from "../correct/types.js";
 import type { JournalKindView, JournalObservationView } from "../journal/journal.js";
 import type { JournalField } from "../journal/types.js";
-import type { FoodLogEntry, FoodLogMacros } from "../log/types.js";
+import { sumMacros } from "../log/nutrients.js";
+import type { FoodLogEntry, FoodLogItem, FoodLogMacros } from "../log/types.js";
+
+const CATEGORY_LABEL: Record<Category, string> = {
+  branded: "labeled package",
+  discrete: "counted food",
+  energy: "rich food",
+  mixed: "mixed dish",
+  beverage: "drink",
+  other: "other",
+};
+
+export interface ItemCorrectionJson {
+  factor: number;
+  label: string;
+}
+
+export interface MealItemJson extends FoodLogItem {
+  correction?: ItemCorrectionJson;
+}
 
 export interface MealJson {
   id: string;
@@ -9,11 +30,12 @@ export interface MealJson {
   query: string;
   description: string;
   macros: FoodLogMacros;
-  items: FoodLogEntry["items"];
+  adjusted?: FoodLogMacros;
+  items: MealItemJson[];
 }
 
-export function serializeMeal(entry: FoodLogEntry): MealJson {
-  return {
+export function serializeMeal(entry: FoodLogEntry, fit?: CorrectionFit | null): MealJson {
+  const meal: MealJson = {
     id: entry._id.toHexString(),
     eatenAt: entry.eatenAt.toISOString(),
     createdAt: entry.createdAt.toISOString(),
@@ -22,6 +44,19 @@ export function serializeMeal(entry: FoodLogEntry): MealJson {
     macros: entry.macros,
     items: entry.items,
   };
+  if (!fit) {
+    return meal;
+  }
+  meal.items = entry.items.map((item) => {
+    const correction = correctionFor(fit, item);
+    return { ...item, correction: { factor: correction.factor, label: correctionLabel(correction) } };
+  });
+  meal.adjusted = sumMacros(entry.items.map((item) => correctedMacros(item, fit)));
+  return meal;
+}
+
+function correctionLabel(correction: ItemCorrection): string {
+  return correction.foodSpecific ? "its own factor" : CATEGORY_LABEL[correction.category];
 }
 
 export interface JournalFieldJson {

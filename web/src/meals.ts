@@ -59,6 +59,12 @@ function itemRow(item: MealItem): HTMLLIElement {
   macros.textContent = formatMacroLine(item.macros);
 
   li.append(title, source, macros);
+  if (item.correction) {
+    const factor = document.createElement("p");
+    factor.className = "muted meal-factor";
+    factor.textContent = `× ${item.correction.factor.toFixed(2)} · ${item.correction.label}`;
+    li.append(factor);
+  }
   return li;
 }
 
@@ -113,6 +119,12 @@ export function renderMeal(meal: Meal, onDelete: (meal: Meal, row: HTMLLIElement
     query.textContent = `Logged as “${meal.query}”`;
     details.append(query);
   }
+  if (meal.adjusted) {
+    const logged = document.createElement("p");
+    logged.className = "muted meal-logged";
+    logged.textContent = `Logged ${formatMacroLine(meal.macros)}`;
+    details.append(logged);
+  }
 
   const items = document.createElement("ul");
   items.className = "meal-items";
@@ -132,7 +144,7 @@ export function renderMeal(meal: Meal, onDelete: (meal: Meal, row: HTMLLIElement
 
   const kcal = document.createElement("p");
   kcal.className = "meal-kcal";
-  kcal.textContent = `${formatKcal(meal.macros.caloriesKcal)} kcal`;
+  kcal.textContent = `${formatKcal(meal.adjusted?.caloriesKcal ?? meal.macros.caloriesKcal)} kcal`;
 
   end.append(toggle, del, kcal);
   top.append(time, end);

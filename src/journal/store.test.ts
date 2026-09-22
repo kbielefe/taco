@@ -44,8 +44,11 @@ describe("MemoryJournalStore", () => {
 
     const listed = await store.listObservations(new Date("2026-09-20T00:00:00Z"), new Date("2026-09-21T00:00:00Z"));
     expect(listed.map((entry) => entry._id.toHexString())).toEqual([later._id.toHexString(), morning._id.toHexString()]);
+    expect(await store.findObservation(morning._id.toHexString())).toBe(morning);
+    expect(await store.findObservation("not-an-id")).toBeNull();
 
     expect(await store.deleteObservation(morning._id.toHexString())).toBe(true);
+    expect(await store.findObservation(morning._id.toHexString())).toBeNull();
     expect(await store.deleteObservation(morning._id.toHexString())).toBe(false);
     expect(await store.deleteObservation("not-an-id")).toBe(false);
   });

@@ -466,7 +466,9 @@ body {
 
 .meal-item-title,
 .meal-item-macros,
-.meal-query {
+.meal-query,
+.meal-logged,
+.meal-factor {
   margin: 0;
 }
 

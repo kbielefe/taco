@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { connectCorrectionRunner } from "../correct/run.js";
 import { createJournal } from "../journal/journal.js";
 import { createFoodLogger } from "../log/logger.js";
 import { createApp } from "./routes.js";
@@ -14,7 +15,13 @@ const journal = await createJournal().catch(async (error: unknown) => {
   await logger.close();
   throw error;
 });
-const app = createApp({ logger, journal });
+const corrections = await connectCorrectionRunner({ logger, journal }).catch(async (error: unknown) => {
+  await logger.close();
+  await journal.close();
+  throw error;
+});
+const app = createApp({ logger, journal, corrections });
+corrections.schedule();
 
 const webDist = join(process.cwd(), "web/dist");
 if (existsSync(join(webDist, "index.html"))) {
@@ -33,6 +40,7 @@ const server = serve({ fetch: app.fetch, port, hostname }, (info) => {
 
 async function shutdown() {
   server.close();
+  await corrections.close();
   await logger.close();
   await journal.close();
   process.exit(0);

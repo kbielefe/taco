@@ -72,6 +72,10 @@ export type {
   ModelScore,
 } from "./correct/index.js";
 export { CATEGORIES, FACTOR_CLIP_HIGH, FACTOR_CLIP_LOW, SIGMA_FLOOR_KCAL } from "./correct/index.js";
+export { connectCorrectionRunner, createCorrectionRunner, isWeighIn, loadHistory } from "./correct/run.js";
+export type { CorrectionRunner, FitHistory, WeightView } from "./correct/run.js";
+export { CORRECTIONS_COLLECTION, MemoryCorrectionStore, MongoCorrectionStore } from "./correct/store.js";
+export type { CorrectionStore, StoredCorrection } from "./correct/store.js";
 export { createJournal, Journal } from "./journal/journal.js";
 export type { AppendKindInput, CreateJournalOptions, JournalKindView, JournalObservationView, LogJournalInput, NewKindInput } from "./journal/journal.js";
 export { JournalConflictError, JournalConfigError, JournalError, JournalNotFoundError, JournalValidationError } from "./journal/errors.js";

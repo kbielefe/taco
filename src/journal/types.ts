@@ -47,6 +47,7 @@ export interface JournalStore {
   listKinds(): Promise<JournalKind[]>;
   deleteKind(id: string): Promise<boolean>;
   insertObservation(entry: Omit<JournalObservation, "_id">): Promise<JournalObservation>;
+  findObservation(id: string): Promise<JournalObservation | null>;
   listObservations(from: Date, to: Date): Promise<JournalObservation[]>;
   listAllObservations(): Promise<JournalObservation[]>;
   deleteObservation(id: string): Promise<boolean>;

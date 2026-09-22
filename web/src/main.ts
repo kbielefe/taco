@@ -45,10 +45,20 @@ const nodes = {
   mealsEl: required(document.querySelector<HTMLOListElement>("#meals"), "meals"),
 };
 
+const CORRECTION_RETRY_MS = 1000;
+
 let meals: Meal[] = [];
 let recommendation: EnergyRecommendation | undefined;
 let recommendationProblem: string | undefined;
-let energyReady = false;
+let mealsReady = false;
+
+function shownMacros(meal: Meal): Macros {
+  return meal.adjusted ?? meal.macros;
+}
+
+function eatenKcal(): number {
+  return sumMacros(meals.map(shownMacros)).caloriesKcal;
+}
 
 function paintTotals(macros: Macros): void {
   nodes.totalKcal.textContent = formatKcal(macros.caloriesKcal);
@@ -94,7 +104,7 @@ function paintList(): void {
   const empty = meals.length === 0;
   nodes.emptyEl.hidden = !empty;
   nodes.mealsEl.hidden = empty;
-  paintTotals(sumMacros(meals.map((meal) => meal.macros)));
+  paintTotals(sumMacros(meals.map(shownMacros)));
 }
 
 function setError(message: string | undefined): void {
@@ -128,7 +138,7 @@ async function handleDelete(meal: Meal, row: HTMLLIElement): Promise<void> {
   const empty = meals.length === 0;
   nodes.emptyEl.hidden = !empty;
   nodes.mealsEl.hidden = empty;
-  paintTotals(sumMacros(meals.map((item) => item.macros)));
+  paintTotals(sumMacros(meals.map(shownMacros)));
   try {
     await deleteMeal(meal.id);
   } catch (error) {
@@ -192,8 +202,8 @@ function show(view: "food" | "journal"): void {
       link.removeAttribute("aria-current");
     }
   }
-  if (view === "food" && energyReady) {
-    void refreshEnergy();
+  if (view === "food" && mealsReady) {
+    void reloadFood();
   }
   if (view === "journal") {
     void journal.load();
@@ -234,22 +244,40 @@ async function refreshEnergy(): Promise<void> {
     recommendation = undefined;
     recommendationProblem = error instanceof Error ? error.message : "Couldn't load a calorie recommendation.";
   }
-  paintRecommendation(sumMacros(meals.map((meal) => meal.macros)).caloriesKcal);
+  paintRecommendation(eatenKcal());
+}
+
+async function loadMeals(allowRetry = true): Promise<void> {
+  const { from, to } = localDayRange();
+  const result = await fetchMeals(from, to);
+  meals = result.meals;
+  paintList();
+  if (result.correctionPending && allowRetry) {
+    window.setTimeout(() => {
+      void loadMeals(false).catch((error: unknown) => {
+        setError(error instanceof Error ? error.message : "Couldn't load today's meals.");
+      });
+    }, CORRECTION_RETRY_MS);
+  }
+}
+
+function reloadFood(): void {
+  void loadMeals().catch((error: unknown) => {
+    setError(error instanceof Error ? error.message : "Couldn't load today's meals.");
+  });
+  void refreshEnergy();
 }
 
 async function load(): Promise<void> {
   nodes.dateLabel.textContent = formatDay(new Date());
   paintTotals(emptyMacros);
   try {
-    const { from, to } = localDayRange();
-    const result = await fetchMeals(from, to);
-    meals = result.meals;
-    paintList();
+    await loadMeals();
   } catch (error) {
     setError(error instanceof Error ? error.message : "Couldn't load today's meals.");
   }
   await refreshEnergy();
-  energyReady = true;
+  mealsReady = true;
 }
 
 const journal = mountJournal();
