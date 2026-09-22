@@ -7,12 +7,28 @@ import { PARSE_SYSTEM_PROMPT, ParsedMealSchema, normalizeParsedMeal } from "./pa
 import { DEFAULT_FOOD_LOG_MODEL, type FoodLogAi, type ParsedMeal, type SelectMatchInput, type SelectedMatch } from "./types.js";
 
 const DEFAULT_XAI_BASE_URL = "https://api.x.ai/v1";
+const DEFAULT_REASONING_EFFORT = "low";
+const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+
+export type XaiReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
 export interface XaiFoodLogAiOptions {
   apiKey?: string;
   model?: string;
   baseURL?: string;
+  reasoningEffort?: string;
   client?: OpenAI;
+}
+
+export function readReasoningEffort(explicit?: string): XaiReasoningEffort {
+  const raw = (explicit ?? process.env.XAI_REASONING_EFFORT ?? DEFAULT_REASONING_EFFORT).trim();
+  const value = raw === "" ? DEFAULT_REASONING_EFFORT : raw;
+  if (!(REASONING_EFFORTS as readonly string[]).includes(value)) {
+    throw new FoodLogConfigError(
+      `XAI_REASONING_EFFORT must be one of: ${REASONING_EFFORTS.join(", ")}`,
+    );
+  }
+  return value as XaiReasoningEffort;
 }
 
 export class XaiFoodLogAi implements FoodLogAi {
@@ -20,12 +36,14 @@ export class XaiFoodLogAi implements FoodLogAi {
   private readonly apiKey: string | undefined;
   private readonly baseURL: string;
   private readonly model: string;
+  private readonly reasoningEffort: XaiReasoningEffort;
 
   constructor(options: XaiFoodLogAiOptions = {}) {
     this.client = options.client;
     this.apiKey = options.apiKey ?? process.env.XAI_API_KEY;
     this.baseURL = options.baseURL ?? DEFAULT_XAI_BASE_URL;
     this.model = options.model ?? DEFAULT_FOOD_LOG_MODEL;
+    this.reasoningEffort = readReasoningEffort(options.reasoningEffort);
   }
 
   private getClient(): OpenAI {
@@ -60,6 +78,7 @@ export class XaiFoodLogAi implements FoodLogAi {
     try {
       const completion = await this.getClient().chat.completions.parse({
         model: this.model,
+        reasoning_effort: this.reasoningEffort,
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
