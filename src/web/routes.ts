@@ -10,6 +10,8 @@ import type { FoodLogger } from "../log/logger.js";
 import type { FoodLogEntry } from "../log/types.js";
 import { sumMacros } from "../log/nutrients.js";
 import { parseIsoDate, serializeKind, serializeMeal, serializeObservation, type MealJson } from "./serialize.js";
+import type { DataCatalog } from "../mcp/catalog.js";
+import { handleMcpRequest } from "../mcp/http.js";
 import { createSyncHub, type SyncHub, type SyncTopic } from "./sync.js";
 
 const SYNC_PING_MS = 25_000;
@@ -36,9 +38,11 @@ export interface AppDeps {
   corrections?: CorrectionRunner;
   env?: NodeJS.ProcessEnv;
   sync?: SyncHub;
+  /** Read-only health data. When omitted, POST /mcp answers 503. */
+  data?: DataCatalog;
 }
 
-export function createApp({ logger, journal, corrections, env = process.env, sync = createSyncHub() }: AppDeps): Hono {
+export function createApp({ logger, journal, corrections, env = process.env, sync = createSyncHub(), data }: AppDeps): Hono {
   const presentMeal = async (entry: FoodLogEntry): Promise<MealJson> => {
     const fit = corrections ? await corrections.current() : null;
     return serializeMeal(entry, fit);
@@ -64,6 +68,13 @@ export function createApp({ logger, journal, corrections, env = process.env, syn
   });
 
   app.get("/api/health", (c) => c.json({ ok: true }));
+
+  app.all("/mcp", (c) => {
+    if (!data) {
+      return c.json({ error: { message: "Data access is not configured." } }, 503);
+    }
+    return handleMcpRequest(c.req.raw, data);
+  });
 
   app.get("/api/events", (c) => {
     c.header("X-Accel-Buffering", "no");

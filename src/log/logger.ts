@@ -1,4 +1,4 @@
-import { MongoClient } from "mongodb";
+import { MongoClient, type Db } from "mongodb";
 import { MongoCacheStore, type CacheStore } from "../fdc/cache.js";
 import { FdcClient } from "../fdc/client.js";
 import type { FoodItem, SearchFoodsOptions, SearchResultFood } from "../fdc/types.js";
@@ -127,6 +127,11 @@ export class FoodLogger {
       }
     }
     return shown;
+  }
+
+  /** Database behind this logger, when it owns a Mongo client. Used by the read-only MCP endpoint. */
+  healthDb(): Db | undefined {
+    return this.mongo?.db(HEALTH_DB);
   }
 
   async close(): Promise<void> {

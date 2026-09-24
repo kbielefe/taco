@@ -5,6 +5,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { connectCorrectionRunner } from "../correct/run.js";
 import { createJournal } from "../journal/journal.js";
 import { createFoodLogger } from "../log/logger.js";
+import { mongoCatalog } from "../mcp/mongo.js";
 import { createApp } from "./routes.js";
 
 const port = Number(process.env.PORT ?? 3001);
@@ -20,14 +21,20 @@ const corrections = await connectCorrectionRunner({ logger, journal }).catch(asy
   await journal.close();
   throw error;
 });
-const app = createApp({ logger, journal, corrections });
+const healthDb = logger.healthDb();
+const app = createApp({
+  logger,
+  journal,
+  corrections,
+  ...(healthDb ? { data: mongoCatalog(healthDb) } : {}),
+});
 corrections.schedule();
 
 const webDist = join(process.cwd(), "web/dist");
 if (existsSync(join(webDist, "index.html"))) {
   app.use("/*", serveStatic({ root: "./web/dist" }));
   app.get("*", async (c, next) => {
-    if (c.req.path.startsWith("/api")) {
+    if (c.req.path.startsWith("/api") || c.req.path === "/mcp") {
       return next();
     }
     return serveStatic({ path: "./web/dist/index.html" })(c, next);
@@ -36,6 +43,9 @@ if (existsSync(join(webDist, "index.html"))) {
 
 const server = serve({ fetch: app.fetch, port, hostname }, (info) => {
   console.log(`Food log: http://${hostname}:${info.port}`);
+  if (healthDb) {
+    console.log(`Data MCP: http://${hostname}:${info.port}/mcp`);
+  }
 });
 
 async function shutdown() {
