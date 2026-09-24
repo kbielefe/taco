@@ -245,15 +245,15 @@ body {
 
 .composer-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.5rem;
   align-items: stretch;
 }
 
 .combobox {
   position: relative;
-  flex: 1 1 12rem;
-  min-width: min(100%, 12rem);
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 #meal,
@@ -290,6 +290,7 @@ body {
 
 #log-button,
 #journal-log {
+  flex: 0 0 auto;
   min-height: 2.75rem;
   min-width: 2.75rem;
   padding: 0.55rem 1.1rem;
@@ -527,6 +528,10 @@ body {
   flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 0.85rem;
+}
+
+.composer-actions:has(> [hidden]:only-child) {
+  display: none;
 }
 
 .composer-actions button {

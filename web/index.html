@@ -97,27 +97,29 @@
           </div>
           <div class="composer-pin">
             <p id="journal-error" class="error" hidden></p>
-            <div class="combobox">
-              <input
-                id="kind"
-                name="kind"
-                type="text"
-                role="combobox"
-                aria-autocomplete="list"
-                aria-expanded="false"
-                aria-controls="kind-list"
-                aria-describedby="kind-hint"
-                autocomplete="off"
-                spellcheck="true"
-              />
-              <ul id="kind-list" class="suggest-list" role="listbox" hidden></ul>
+            <div class="composer-row">
+              <div class="combobox">
+                <input
+                  id="kind"
+                  name="kind"
+                  type="text"
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded="false"
+                  aria-controls="kind-list"
+                  aria-describedby="kind-hint"
+                  autocomplete="off"
+                  spellcheck="true"
+                />
+                <ul id="kind-list" class="suggest-list" role="listbox" hidden></ul>
+              </div>
+              <button type="submit" id="journal-log">Log</button>
             </div>
           </div>
           <div id="kind-setup"></div>
           <div id="entry-fields" class="entry-fields"></div>
           <div class="composer-actions">
             <button type="button" id="add-field" class="button-secondary" hidden>Add field</button>
-            <button type="submit" id="journal-log">Log</button>
           </div>
 
           <section class="diary" aria-labelledby="journal-heading">
