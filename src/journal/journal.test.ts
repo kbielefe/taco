@@ -151,5 +151,69 @@ describe("Journal", () => {
 
     const listed = await journal.kinds();
     expect(listed[0]?.suggestions.area).toEqual(["head", "neck"]);
+    expect(listed[0]?.recentValues["s:mild"]).toEqual([{ fieldId: "area", value: "head" }]);
+  });
+
+  it("remembers later fields by the first field's most recent value", async () => {
+    const journal = service();
+    const medication = await journal.log({
+      at: new Date("2026-09-20T12:00:00Z"),
+      kind: {
+        label: "Medication",
+        fields: [
+          { label: "Name", type: "text" },
+          { label: "Dose", type: "number", unit: "mg" },
+          { label: "Note", type: "text" },
+        ],
+      },
+      values: [
+        { fieldId: "Name", value: "Ibuprofen" },
+        { fieldId: "Dose", value: 200 },
+        { fieldId: "Note", value: "head" },
+      ],
+    });
+    const kindId = medication.kind._id.toHexString();
+    await journal.log({
+      at: new Date("2026-09-20T13:00:00Z"),
+      kindId,
+      values: [
+        { fieldId: "Name", value: "Nurtec" },
+        { fieldId: "Dose", value: 75 },
+      ],
+    });
+    await journal.log({
+      at: new Date("2026-09-20T14:00:00Z"),
+      kindId,
+      values: [
+        { fieldId: "name", value: "ibuprofen" },
+        { fieldId: "dose", value: 400 },
+      ],
+    });
+    await journal.log({
+      at: new Date("2026-09-20T15:00:00Z"),
+      kindId,
+      values: [{ fieldId: "name", value: "Ibuprofen" }],
+    });
+    await journal.log({
+      at: new Date("2026-09-20T16:00:00Z"),
+      kindId,
+      values: [{ fieldId: "dose", value: 999 }],
+    });
+
+    const listed = await journal.kinds();
+    expect(listed[0]?.recentValues["s:ibuprofen"]).toEqual([
+      { fieldId: "dose", value: 400 },
+      { fieldId: "note", value: "head" },
+    ]);
+    expect(listed[0]?.recentValues["s:nurtec"]).toEqual([{ fieldId: "dose", value: 75 }]);
+    expect(Object.values(listed[0]?.recentValues ?? {}).flat()).not.toContainEqual({ fieldId: "dose", value: 999 });
+
+    const weight = await journal.log({
+      at: day,
+      kind: { label: "Weight", fields: [{ label: "Weight", type: "number", unit: "lb" }] },
+      values: [{ fieldId: "Weight", value: 315 }],
+    });
+    const kinds = await journal.kinds();
+    expect(kinds.find((item) => item.kind._id.equals(weight.kind._id))?.recentValues).toEqual({});
   });
 });

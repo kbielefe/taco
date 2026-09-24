@@ -73,6 +73,7 @@ export interface JournalKindJson {
   fields: JournalFieldJson[];
   lastUsedAt: string | null;
   suggestions: Record<string, string[]>;
+  recentValues: JournalKindView["recentValues"];
 }
 
 export interface JournalObservationJson {
@@ -101,6 +102,7 @@ export function serializeKind(view: JournalKindView): JournalKindJson {
     fields: view.kind.fields.map(serializeField),
     lastUsedAt: view.lastUsedAt ? view.lastUsedAt.toISOString() : null,
     suggestions: view.suggestions,
+    recentValues: view.recentValues,
   };
 }
 

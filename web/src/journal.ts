@@ -12,6 +12,7 @@ import {
   type JournalValue,
 } from "./api.js";
 import { mountStringCombobox } from "./combobox.js";
+import { recentValueKey } from "../../src/journal/recent.js";
 import { pickSuggestions } from "../../src/log/fuzzy.js";
 import { formatTime, localDayRange } from "./time.js";
 
@@ -37,6 +38,24 @@ interface Editor {
   clear(): void;
   focus(): void;
   restore(value: JournalValue["value"]): void;
+  subscribe(listener: (reason: "edit" | "blur") => void): void;
+}
+
+function editSignal(): {
+  subscribe: Editor["subscribe"];
+  emit: (reason: "edit" | "blur") => void;
+} {
+  const listeners = new Set<(reason: "edit" | "blur") => void>();
+  return {
+    subscribe(listener) {
+      listeners.add(listener);
+    },
+    emit(reason) {
+      for (const listener of listeners) {
+        listener(reason);
+      }
+    },
+  };
 }
 
 type Mode = "idle" | "existing" | "create";
@@ -221,6 +240,9 @@ export function mountJournal(): { load: () => Promise<void> } {
   let editors: Editor[] = [];
   let options: { label: string; kind: JournalKind | null }[] = [];
   let activeIndex = -1;
+  let appliedKey: string | null = null;
+  let autofilled = new Set<string>();
+  let edited = new Set<string>();
 
   function setError(message: string | undefined): void {
     if (!message) {
@@ -481,10 +503,98 @@ export function mountJournal(): { load: () => Promise<void> } {
     return row;
   }
 
+  function editorValue(editor: Editor): JournalValue["value"] | undefined {
+    const result = editor.read();
+    if (!result || "error" in result) {
+      return undefined;
+    }
+    return result.value;
+  }
+
+  function laterEditors(): Editor[] {
+    if (!selected || selected.fields.length < 2) {
+      return [];
+    }
+    const rest = new Set(selected.fields.slice(1).map((field) => field.id));
+    return editors.filter((editor) => rest.has(editor.key));
+  }
+
+  function applyRecent(reason: "edit" | "blur"): void {
+    if (!selected || selected.fields.length < 2) {
+      return;
+    }
+    const first = selected.fields[0];
+    if (!first) {
+      return;
+    }
+    const lead = editors.find((editor) => editor.key === first.id);
+    if (!lead) {
+      return;
+    }
+    const value = editorValue(lead);
+    const key = value === undefined ? undefined : recentValueKey(first.type, value);
+    const preset = key ? selected.recentValues[key] : undefined;
+    if (key && preset) {
+      if (key === appliedKey) {
+        return;
+      }
+      appliedKey = key;
+      edited.clear();
+      autofilled = new Set();
+      const byId = new Map(preset.map((item) => [item.fieldId, item.value]));
+      for (const editor of laterEditors()) {
+        const next = byId.get(editor.key);
+        if (next === undefined) {
+          editor.clear();
+          continue;
+        }
+        editor.restore(next);
+        autofilled.add(editor.key);
+      }
+      return;
+    }
+    const discrete = first.type === "enum" || first.type === "boolean" || first.type === "event";
+    const finished = value === undefined || reason === "blur" || discrete;
+    if (finished && appliedKey) {
+      for (const editor of laterEditors()) {
+        if (autofilled.has(editor.key) && !edited.has(editor.key)) {
+          editor.clear();
+        }
+      }
+      autofilled.clear();
+      appliedKey = null;
+    }
+  }
+
+  function watchRecent(): void {
+    const fields = selected?.fields ?? [];
+    const first = fields[0];
+    if (!first || fields.length < 2) {
+      return;
+    }
+    editors.find((editor) => editor.key === first.id)?.subscribe((reason) => {
+      applyRecent(reason);
+    });
+    const rest = new Set(fields.slice(1).map((field) => field.id));
+    for (const editor of editors) {
+      if (!rest.has(editor.key)) {
+        continue;
+      }
+      editor.subscribe((reason) => {
+        if (reason === "edit") {
+          edited.add(editor.key);
+        }
+      });
+    }
+  }
+
   function renderEntryFields(): void {
     const saved = editors.map((editor) => ({ key: editor.key, value: editor.read() }));
     fieldsHost.replaceChildren();
     editors = [];
+    appliedKey = null;
+    autofilled = new Set();
+    edited = new Set();
     if (mode === "existing" && selected) {
       for (const field of selected.fields) {
         fieldsHost.append(renderValueField(field, field.id));
@@ -504,6 +614,7 @@ export function mountJournal(): { load: () => Promise<void> } {
       }
       editors.find((editor) => editor.key === item.key)?.restore(item.value.value);
     }
+    watchRecent();
   }
 
   function previewField(draft: Draft, index: number): JournalField | undefined {
@@ -550,6 +661,13 @@ export function mountJournal(): { load: () => Promise<void> } {
     box.inputMode = "decimal";
     box.autocomplete = "off";
     box.setAttribute("aria-label", field.label);
+    const signal = editSignal();
+    box.addEventListener("input", () => {
+      signal.emit("edit");
+    });
+    box.addEventListener("blur", () => {
+      signal.emit("blur");
+    });
     const editor: Editor = {
       key,
       read: () => {
@@ -574,6 +692,7 @@ export function mountJournal(): { load: () => Promise<void> } {
           box.value = String(value);
         }
       },
+      subscribe: signal.subscribe,
     };
     editors.push(editor);
     wrap.append(box, el("span", "unit-suffix", field.unit ?? ""));
@@ -584,6 +703,7 @@ export function mountJournal(): { load: () => Promise<void> } {
     const row = el("div", "choice-row");
     row.setAttribute("role", "group");
     row.setAttribute("aria-label", label);
+    const signal = editSignal();
     const buttons: HTMLButtonElement[] = [];
     for (const option of options) {
       const button = el("button", "choice", option);
@@ -595,6 +715,10 @@ export function mountJournal(): { load: () => Promise<void> } {
           other.setAttribute("aria-pressed", "false");
         }
         button.setAttribute("aria-pressed", wasOn ? "false" : "true");
+        signal.emit("edit");
+      });
+      button.addEventListener("blur", () => {
+        signal.emit("blur");
       });
       buttons.push(button);
       row.append(button);
@@ -618,6 +742,7 @@ export function mountJournal(): { load: () => Promise<void> } {
           button.setAttribute("aria-pressed", button.textContent === value ? "true" : "false");
         }
       },
+      subscribe: signal.subscribe,
     });
     return row;
   }
@@ -642,6 +767,13 @@ export function mountJournal(): { load: () => Promise<void> } {
         getItems: () => pickSuggestions(suggestions, box.value, 8),
       });
     }
+    const signal = editSignal();
+    box.addEventListener("input", () => {
+      signal.emit("edit");
+    });
+    box.addEventListener("blur", () => {
+      signal.emit("blur");
+    });
     editors.push({
       key,
       read: () => {
@@ -659,6 +791,7 @@ export function mountJournal(): { load: () => Promise<void> } {
           box.value = value;
         }
       },
+      subscribe: signal.subscribe,
     });
     wrap.append(box, menu);
     return wrap;
@@ -683,6 +816,7 @@ export function mountJournal(): { load: () => Promise<void> } {
     const row = el("div", "choice-row");
     row.setAttribute("role", "group");
     row.setAttribute("aria-label", label);
+    const signal = editSignal();
     const buttons: HTMLButtonElement[] = [];
     for (const item of items) {
       const button = el("button", "choice", item.label);
@@ -695,6 +829,10 @@ export function mountJournal(): { load: () => Promise<void> } {
           other.setAttribute("aria-pressed", "false");
         }
         button.setAttribute("aria-pressed", wasOn ? "false" : "true");
+        signal.emit("edit");
+      });
+      button.addEventListener("blur", () => {
+        signal.emit("blur");
       });
       buttons.push(button);
       row.append(button);
@@ -722,6 +860,7 @@ export function mountJournal(): { load: () => Promise<void> } {
           button.setAttribute("aria-pressed", token !== "" && button.dataset.value === token ? "true" : "false");
         }
       },
+      subscribe: signal.subscribe,
     });
     return row;
   }

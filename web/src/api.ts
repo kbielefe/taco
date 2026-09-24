@@ -234,6 +234,7 @@ export interface JournalKind {
   fields: JournalField[];
   lastUsedAt: string | null;
   suggestions: Record<string, string[]>;
+  recentValues: Record<string, JournalValue[]>;
 }
 
 export interface JournalValue {

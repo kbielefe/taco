@@ -5,10 +5,12 @@ import {
   HEALTH_DB,
   TEXT_SUGGESTION_LIMIT,
   type JournalField,
+  type JournalFieldValue,
   type JournalKind,
   type JournalObservation,
   type JournalStore,
 } from "./types.js";
+import { recentFieldValues } from "./recent.js";
 import { defineFields, nameKey, normalizeKindLabel, validateValues, withAppendedOptions, type OptionUpdate } from "./validate.js";
 
 export interface NewKindInput {
@@ -32,6 +34,7 @@ export interface JournalKindView {
   kind: JournalKind;
   lastUsedAt: Date | null;
   suggestions: Record<string, string[]>;
+  recentValues: Record<string, JournalFieldValue[]>;
 }
 
 export interface JournalObservationView {
@@ -139,6 +142,7 @@ export class Journal {
         kind,
         lastUsedAt: lastUsedAt(kind, observations),
         suggestions: textSuggestions(kind, observations),
+        recentValues: recentFieldValues(kind, observations),
       }))
       .sort((a, b) => {
         const used = (b.lastUsedAt?.getTime() ?? -1) - (a.lastUsedAt?.getTime() ?? -1);

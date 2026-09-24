@@ -373,6 +373,12 @@ describe("journal HTTP API", () => {
     expect(appended.status).toBe(200);
     const kind = (await appended.json()) as { fields: { id: string }[]; suggestions: Record<string, string[]> };
     expect(kind.fields.map((field) => field.id)).toEqual(["systolic", "diastolic", "arm"]);
+
+    const kinds = await api.request("/api/journal/kinds");
+    const listed = (await kinds.json()) as {
+      kinds: { recentValues: Record<string, { fieldId: string; value: number }[]> }[];
+    };
+    expect(listed.kinds[0]?.recentValues["n:120"]).toEqual([{ fieldId: "diastolic", value: 80 }]);
   });
 });
 
