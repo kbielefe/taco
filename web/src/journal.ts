@@ -203,17 +203,25 @@ function buildFields(drafts: Draft[]): JournalFieldInput[] | string {
   return fields;
 }
 
-function deleteIcon(): SVGSVGElement {
+function strokeIcon(paths: string[]): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("focusable", "false");
-  for (const d of ["M3 6h18", "M8 6V4h8v2", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", "M10 11v6", "M14 11v6"]) {
+  for (const d of paths) {
     const path = document.createElementNS(SVG_NS, "path");
     path.setAttribute("d", d);
     svg.append(path);
   }
   return svg;
+}
+
+function deleteIcon(): SVGSVGElement {
+  return strokeIcon(["M3 6h18", "M8 6V4h8v2", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", "M10 11v6", "M14 11v6"]);
+}
+
+function pencilIcon(): SVGSVGElement {
+  return strokeIcon(["M12 20h9", "M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"]);
 }
 
 export function mountJournal(): { load: () => Promise<void> } {
@@ -224,6 +232,8 @@ export function mountJournal(): { load: () => Promise<void> } {
   const setup = required(document.querySelector<HTMLDivElement>("#kind-setup"), "kind-setup");
   const fieldsHost = required(document.querySelector<HTMLDivElement>("#entry-fields"), "entry-fields");
   const addFieldButton = required(document.querySelector<HTMLButtonElement>("#add-field"), "add-field");
+  const editButton = required(document.querySelector<HTMLButtonElement>("#edit-kind"), "edit-kind");
+  editButton.append(pencilIcon());
   const logButton = required(document.querySelector<HTMLButtonElement>("#journal-log"), "journal-log");
   const emptyEl = required(document.querySelector<HTMLParagraphElement>("#journal-empty"), "journal-empty");
   const entriesEl = required(document.querySelector<HTMLOListElement>("#journal-entries"), "journal-entries");
@@ -236,6 +246,7 @@ export function mountJournal(): { load: () => Promise<void> } {
   let selected: JournalKind | null = null;
   let drafts: Draft[] = [];
   let appending = false;
+  let editing = false;
   let createLabel = "";
   let editors: Editor[] = [];
   let options: { label: string; kind: JournalKind | null }[] = [];
@@ -261,6 +272,7 @@ export function mountJournal(): { load: () => Promise<void> } {
   function setBusy(busy: boolean): void {
     logButton.disabled = busy;
     addFieldButton.disabled = busy;
+    editButton.disabled = busy;
   }
 
   function closeList(): void {
@@ -343,21 +355,28 @@ export function mountJournal(): { load: () => Promise<void> } {
     beginCreate(normalize(input.value));
   }
 
-  function updateAddButton(): void {
-    addFieldButton.hidden = mode === "idle" || (mode === "existing" && appending);
+  function updateChrome(): void {
+    const showEdits = mode === "existing" && editing;
+    editButton.hidden = mode !== "existing";
+    editButton.setAttribute("aria-expanded", showEdits ? "true" : "false");
+    addFieldButton.hidden = mode !== "create" && !(showEdits && !appending);
+    for (const row of fieldsHost.querySelectorAll<HTMLElement>(".inline-add")) {
+      row.hidden = !showEdits;
+    }
   }
 
   function selectExisting(kind: JournalKind): void {
     mode = "existing";
     selected = kind;
     appending = false;
+    editing = false;
     drafts = [];
     createLabel = "";
     input.value = kind.label;
     closeList();
     renderSetup();
     renderEntryFields();
-    updateAddButton();
+    updateChrome();
     focusFirst();
   }
 
@@ -365,13 +384,14 @@ export function mountJournal(): { load: () => Promise<void> } {
     mode = "create";
     selected = null;
     appending = false;
+    editing = false;
     createLabel = label;
     drafts = [{ label, type: "", unit: "", options: "" }];
     input.value = label;
     closeList();
     renderSetup();
     renderEntryFields();
-    updateAddButton();
+    updateChrome();
     setup.querySelector("select")?.focus();
   }
 
@@ -386,11 +406,12 @@ export function mountJournal(): { load: () => Promise<void> } {
     mode = "idle";
     selected = null;
     appending = false;
+    editing = false;
     drafts = [];
     createLabel = "";
     renderSetup();
     renderEntryFields();
-    updateAddButton();
+    updateChrome();
   }
 
   function renderSetup(): void {
@@ -487,7 +508,7 @@ export function mountJournal(): { load: () => Promise<void> } {
         drafts = [];
         renderSetup();
         renderEntryFields();
-        updateAddButton();
+        updateChrome();
       });
       row.append(cancel);
     } else if (index > 0) {
@@ -615,6 +636,7 @@ export function mountJournal(): { load: () => Promise<void> } {
       editors.find((editor) => editor.key === item.key)?.restore(item.value.value);
     }
     watchRecent();
+    updateChrome();
   }
 
   function previewField(draft: Draft, index: number): JournalField | undefined {
@@ -1141,7 +1163,7 @@ export function mountJournal(): { load: () => Promise<void> } {
         }
         renderSetup();
         renderEntryFields();
-        updateAddButton();
+        updateChrome();
         restoreValues(values.map((value) => ({ key: value.fieldId, value: value.value })));
       }
       if (values.length === 0) {
@@ -1175,9 +1197,23 @@ export function mountJournal(): { load: () => Promise<void> } {
       appending = true;
       drafts = [{ label: "", type: "", unit: "", options: "" }];
       renderSetup();
-      updateAddButton();
+      updateChrome();
       setup.querySelector("input")?.focus();
     }
+  });
+
+  editButton.addEventListener("click", () => {
+    if (mode !== "existing" || !selected) {
+      return;
+    }
+    editing = !editing;
+    if (!editing && appending) {
+      appending = false;
+      drafts = [];
+      renderSetup();
+      renderEntryFields();
+    }
+    updateChrome();
   });
 
   input.addEventListener("input", () => {
