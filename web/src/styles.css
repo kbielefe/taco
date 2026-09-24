@@ -44,6 +44,10 @@
   box-sizing: border-box;
 }
 
+html {
+  scroll-padding-top: 5.5rem;
+}
+
 body {
   margin: 0;
   min-height: 100dvh;
@@ -120,13 +124,7 @@ body {
 }
 
 .totals {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: var(--bg);
   padding: 0.5rem 0 1rem;
-  margin: 0 calc(var(--space) * -1);
-  padding-inline: var(--space);
 }
 
 .kcal-hero {
@@ -164,7 +162,7 @@ body {
   margin: 0.85rem 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 6.5rem), 1fr));
   gap: 0.5rem;
 }
 
@@ -207,7 +205,7 @@ body {
 }
 
 .composer {
-  margin: 0.5rem 0 1.75rem;
+  margin: 0.5rem 0 0;
 }
 
 .field label {
@@ -236,16 +234,26 @@ body {
   font-weight: 550;
 }
 
+.composer-pin {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--bg);
+  margin-inline: calc(var(--space) * -1);
+  padding: 0.35rem var(--space) 0.55rem;
+}
+
 .composer-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   align-items: stretch;
 }
 
 .combobox {
   position: relative;
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 12rem;
+  min-width: min(100%, 12rem);
 }
 
 #meal,
@@ -300,10 +308,9 @@ body {
   cursor: wait;
 }
 
-#suggestions,
-#kind-list {
+.suggest-list {
   position: absolute;
-  z-index: 3;
+  z-index: 5;
   left: 0;
   right: 0;
   margin: 0.25rem 0 0;
@@ -317,11 +324,11 @@ body {
   overflow: auto;
 }
 
-#suggestions li,
-#kind-list li {
+.suggest-list li {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.35rem 0.75rem;
   padding: 0.55rem 0.65rem;
   border-radius: 0.5rem;
   cursor: pointer;
@@ -329,23 +336,25 @@ body {
   align-items: center;
 }
 
-#suggestions li.active,
-#suggestions li:hover,
-#kind-list li.active,
-#kind-list li:hover {
+.suggest-list li.active,
+.suggest-list li:hover {
   background: color-mix(in srgb, var(--accent) 12%, var(--surface));
 }
 
 .suggestion-query {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1 1 8rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .suggestion-kcal {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
+}
+
+.diary {
+  margin-top: 1.25rem;
 }
 
 .meals {
@@ -355,6 +364,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
+}
+
+.meal-row,
+.meal {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .meal {
@@ -367,29 +382,38 @@ body {
 
 .meal-top {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.15rem 0.5rem;
 }
 
 .meal-top time {
+  flex: 1 1 4.5rem;
+  min-width: min-content;
   color: var(--muted);
   font-size: 0.9rem;
-  min-width: 0;
 }
 
 .meal-end {
-  display: flex;
+  display: grid;
+  grid-template-columns: 2.75rem 2.75rem minmax(4.5rem, 8.5rem);
   align-items: center;
-  flex-shrink: 0;
+  margin-left: auto;
+  max-width: 100%;
+}
+
+.meal-end.single {
+  grid-template-columns: 2.75rem minmax(4.5rem, 8.5rem);
 }
 
 .meal-kcal {
   margin: 0;
+  min-width: 0;
   padding-inline: 0.15rem 0.2rem;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  text-align: end;
+  overflow-wrap: anywhere;
 }
 
 .meal-title {
@@ -397,6 +421,7 @@ body {
   font-size: 1.05rem;
   font-weight: 600;
   letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
 }
 
 .icon-button {
@@ -470,6 +495,7 @@ body {
 .meal-logged,
 .meal-factor {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .meal-item .muted {
@@ -494,39 +520,6 @@ body {
   text-transform: none;
   letter-spacing: 0;
   font-size: 0.8rem;
-}
-
-.journal-top {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.15rem 0.6rem;
-}
-
-.journal-top .meal-title {
-  min-width: 0;
-}
-
-@media (max-width: 36rem) {
-  .journal-top {
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-areas:
-      "time end"
-      "title title";
-  }
-
-  .journal-top time {
-    grid-area: time;
-  }
-
-  .journal-top .meal-end {
-    grid-area: end;
-    justify-self: end;
-  }
-
-  .journal-top .meal-title {
-    grid-area: title;
-  }
 }
 
 .composer-actions {
@@ -640,10 +633,4 @@ body {
 
 .draft .hint {
   margin-bottom: 0;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .totals {
-    position: static;
-  }
 }

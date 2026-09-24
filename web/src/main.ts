@@ -12,6 +12,7 @@ import { mountCombobox } from "./combobox.js";
 import { mountJournal } from "./journal.js";
 import { emptyMacros, formatGrams, formatKcal, sumMacros } from "./macros.js";
 import { renderMeal } from "./meals.js";
+import { watchChanges } from "./sync.js";
 import { formatDay, localDayRange } from "./time.js";
 import "./styles.css";
 
@@ -51,6 +52,8 @@ let meals: Meal[] = [];
 let recommendation: EnergyRecommendation | undefined;
 let recommendationProblem: string | undefined;
 let mealsReady = false;
+let logging = false;
+let foodDirty = false;
 
 function shownMacros(meal: Meal): Macros {
   return meal.adjusted ?? meal.macros;
@@ -170,6 +173,7 @@ nodes.form.addEventListener("submit", async (event) => {
   setError(undefined);
   combobox.close();
   setBusy(true);
+  logging = true;
   try {
     const meal = await logMeal(query, {
       onProgress: (message) => {
@@ -182,8 +186,13 @@ nodes.form.addEventListener("submit", async (event) => {
   } catch (error) {
     setError(error instanceof Error ? error.message : "Couldn't log that meal.");
   } finally {
+    logging = false;
     setBusy(false);
     nodes.input.focus();
+    if (foodDirty) {
+      foodDirty = false;
+      reloadFood();
+    }
   }
 });
 
@@ -280,7 +289,55 @@ async function load(): Promise<void> {
   mealsReady = true;
 }
 
+function debounce(run: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return () => {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+    timer = setTimeout(() => {
+      timer = undefined;
+      run();
+    }, 300);
+  };
+}
+
 const journal = mountJournal();
+
+const syncFood = debounce(() => {
+  if (!mealsReady || viewFood.hidden) {
+    return;
+  }
+  if (logging) {
+    foodDirty = true;
+    return;
+  }
+  reloadFood();
+});
+
+const syncJournal = debounce(() => {
+  if (viewJournal.hidden) {
+    return;
+  }
+  void journal.load();
+});
+
+watchChanges(
+  (topic) => {
+    if (topic === "food") {
+      syncFood();
+    } else {
+      syncJournal();
+    }
+  },
+  () => {
+    if (viewFood.hidden) {
+      syncJournal();
+    } else {
+      syncFood();
+    }
+  },
+);
 if (location.pathname !== "/" && location.pathname !== "/journal") {
   history.replaceState({}, "", "/");
 }

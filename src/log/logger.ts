@@ -7,6 +7,7 @@ import { FoodLogAiError, FoodLogConfigError, FoodLogMatchError } from "./errors.
 import { candidateIds, clampGrams, compactSearchCandidate, fusedSearchFoods } from "./match.js";
 import { macrosForGrams, sumMacros, tryMacrosForGrams, withSearchNutrients } from "./nutrients.js";
 import { searchQueriesForItem } from "./parse.js";
+import { alphabetical, fuzzyMatch } from "./fuzzy.js";
 import { cacheResolution, QUERY_CACHE_PREFIX, queryCacheKey, suggestionFromCacheEntry, normalizeQuery } from "./query-cache.js";
 import { MongoFoodStore } from "./store.js";
 import {
@@ -28,6 +29,7 @@ import {
 } from "./types.js";
 
 const SEARCH_PAGE_SIZE = 8;
+const SUGGEST_POOL = 200;
 
 export interface FoodLoggerOptions {
   fdc: FdcLookup;
@@ -97,31 +99,34 @@ export class FoodLogger {
   async suggest(prefix: string, limit = SUGGEST_LIMIT): Promise<FoodLogSuggestion[]> {
     const normalized = normalizeQuery(prefix);
     const entries = await this.queryCache.listRecent({
-      queryPrefix: normalized || undefined,
-      keyPrefix: normalized ? `${QUERY_CACHE_PREFIX}${normalized}` : undefined,
-      limit: Math.max(limit * 2, SUGGEST_LIMIT),
+      keyPrefix: QUERY_CACHE_PREFIX,
+      limit: SUGGEST_POOL,
     });
-    const suggestions: FoodLogSuggestion[] = [];
-    const seen = new Set<string>();
+    const recent: string[] = [];
+    const byQuery = new Map<string, FoodLogSuggestion>();
     for (const entry of entries) {
       const suggestion = suggestionFromCacheEntry(entry);
       if (!suggestion) {
         continue;
       }
       const key = normalizeQuery(suggestion.query);
-      if (normalized && !key.startsWith(normalized)) {
+      if (byQuery.has(key)) {
         continue;
       }
-      if (seen.has(key)) {
+      if (normalized && !fuzzyMatch(normalized, suggestion.query) && !fuzzyMatch(normalized, suggestion.description)) {
         continue;
       }
-      seen.add(key);
-      suggestions.push(suggestion);
-      if (suggestions.length >= limit) {
-        break;
+      byQuery.set(key, suggestion);
+      recent.push(suggestion.query);
+    }
+    const shown: FoodLogSuggestion[] = [];
+    for (const query of alphabetical(recent.slice(0, limit))) {
+      const suggestion = byQuery.get(normalizeQuery(query));
+      if (suggestion) {
+        shown.push(suggestion);
       }
     }
-    return suggestions;
+    return shown;
   }
 
   async close(): Promise<void> {

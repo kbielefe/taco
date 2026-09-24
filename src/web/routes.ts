@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { stream } from "hono/streaming";
+import { stream, streamSSE } from "hono/streaming";
 import { isWeighIn, type CorrectionRunner } from "../correct/run.js";
 import { energyWindow, recommendDay } from "../energy/recommend.js";
 import { readBodyProfile } from "../energy/profile.js";
@@ -10,6 +10,9 @@ import type { FoodLogger } from "../log/logger.js";
 import type { FoodLogEntry } from "../log/types.js";
 import { sumMacros } from "../log/nutrients.js";
 import { parseIsoDate, serializeKind, serializeMeal, serializeObservation, type MealJson } from "./serialize.js";
+import { createSyncHub, type SyncHub, type SyncTopic } from "./sync.js";
+
+const SYNC_PING_MS = 25_000;
 
 function publicErrorMessage(error: unknown): { message: string; status: 400 | 422 | 500 | 503 } {
   if (error instanceof FoodLogConfigError && /query is required/i.test(error.message)) {
@@ -32,12 +35,25 @@ export interface AppDeps {
   journal: Journal;
   corrections?: CorrectionRunner;
   env?: NodeJS.ProcessEnv;
+  sync?: SyncHub;
 }
 
-export function createApp({ logger, journal, corrections, env = process.env }: AppDeps): Hono {
+export function createApp({ logger, journal, corrections, env = process.env, sync = createSyncHub() }: AppDeps): Hono {
   const presentMeal = async (entry: FoodLogEntry): Promise<MealJson> => {
     const fit = corrections ? await corrections.current() : null;
     return serializeMeal(entry, fit);
+  };
+  const publish = (topic: SyncTopic): void => {
+    sync.publish(topic);
+  };
+  const publishFit = (timeZone: string | undefined): void => {
+    if (!corrections) {
+      return;
+    }
+    corrections.schedule(timeZone ? { timeZone } : {});
+    void corrections.whenIdle().then(() => {
+      publish("food");
+    });
   };
   const app = new Hono();
 
@@ -48,6 +64,34 @@ export function createApp({ logger, journal, corrections, env = process.env }: A
   });
 
   app.get("/api/health", (c) => c.json({ ok: true }));
+
+  app.get("/api/events", (c) => {
+    c.header("X-Accel-Buffering", "no");
+    return streamSSE(c, async (out) => {
+      let chain = Promise.resolve();
+      const unsubscribe = sync.subscribe((topic) => {
+        chain = chain
+          .then(async () => {
+            await out.writeSSE({ data: JSON.stringify({ topic }) });
+          })
+          .catch(() => undefined);
+      });
+      const ping = setInterval(() => {
+        chain = chain
+          .then(async () => {
+            await out.write(":\n\n");
+          })
+          .catch(() => undefined);
+      }, SYNC_PING_MS);
+      await new Promise<void>((resolve) => {
+        out.onAbort(() => {
+          clearInterval(ping);
+          unsubscribe();
+          resolve();
+        });
+      });
+    });
+  });
 
   app.get("/api/meals", async (c) => {
     const from = parseIsoDate(c.req.query("from"));
@@ -79,7 +123,9 @@ export function createApp({ logger, journal, corrections, env = process.env }: A
     if (!wantsProgressStream(c.req.header("accept"))) {
       try {
         const entry = await logger.log(query, logOptions);
-        return c.json(await presentMeal(entry), 201);
+        const meal = await presentMeal(entry);
+        publish("food");
+        return c.json(meal, 201);
       } catch (error) {
         const mapped = publicErrorMessage(error);
         if (mapped.status === 500) {
@@ -101,6 +147,7 @@ export function createApp({ logger, journal, corrections, env = process.env }: A
           },
         });
         await out.writeln(JSON.stringify({ type: "result", meal: await presentMeal(entry) }));
+        publish("food");
       } catch (error) {
         const mapped = publicErrorMessage(error);
         if (mapped.status === 500) {
@@ -116,6 +163,7 @@ export function createApp({ logger, journal, corrections, env = process.env }: A
     if (!deleted) {
       return c.body(null, 404);
     }
+    publish("food");
     return c.body(null, 204);
   });
 
@@ -166,6 +214,7 @@ export function createApp({ logger, journal, corrections, env = process.env }: A
       if (!view) {
         return c.json({ error: { message: "That kind wasn't found." } }, 404);
       }
+      publish("journal");
       return c.json(serializeKind(view));
     } catch (error) {
       const mapped = journalHttpError(error);
@@ -210,8 +259,9 @@ export function createApp({ logger, journal, corrections, env = process.env }: A
         ...(at ? { at } : {}),
         values: body.values,
       });
+      publish("journal");
       if (isWeighIn(view)) {
-        corrections?.schedule({ timeZone: typeof body.timeZone === "string" ? body.timeZone : undefined });
+        publishFit(typeof body.timeZone === "string" ? body.timeZone : undefined);
       }
       return c.json(serializeObservation(view), 201);
     } catch (error) {
@@ -230,8 +280,9 @@ export function createApp({ logger, journal, corrections, env = process.env }: A
     if (!deleted) {
       return c.body(null, 404);
     }
+    publish("journal");
     if (existing && isWeighIn(existing)) {
-      corrections?.schedule({ timeZone: c.req.query("timeZone") });
+      publishFit(c.req.query("timeZone"));
     }
     return c.body(null, 204);
   });

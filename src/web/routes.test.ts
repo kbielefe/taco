@@ -13,6 +13,7 @@ import type { FoodLogAi, FoodLogEntry, ParsedMeal, SelectMatchInput, SelectedMat
 import { MemoryCorrectionStore } from "../correct/store.js";
 import { createApp } from "./routes.js";
 import { serializeMeal } from "./serialize.js";
+import { createSyncHub } from "./sync.js";
 
 function jsonFood(overrides: Partial<SearchResultFood> & Pick<SearchResultFood, "fdcId" | "description">): SearchResultFood {
   return { dataType: "SR Legacy", score: 100, ...overrides };
@@ -40,7 +41,7 @@ function mockAi(parsed: ParsedMeal, match: SelectedMatch): FoodLogAi {
   };
 }
 
-function testApp(options: { corrections?: CorrectionRunner } = {}) {
+function testApp(options: { corrections?: CorrectionRunner; sync?: ReturnType<typeof createSyncHub> } = {}) {
   const foodStore = new MemoryFoodStore();
   const queryCache = new MemoryCacheStore();
   const logger = new FoodLogger({
@@ -56,7 +57,12 @@ function testApp(options: { corrections?: CorrectionRunner } = {}) {
     foodStore,
   });
   return {
-    app: createApp({ logger, journal: new Journal(new MemoryJournalStore()), corrections: options.corrections }),
+    app: createApp({
+      logger,
+      journal: new Journal(new MemoryJournalStore()),
+      corrections: options.corrections,
+      sync: options.sync,
+    }),
     logger,
     foodStore,
   };
@@ -153,6 +159,42 @@ describe("food log HTTP API", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.suggestions[0]?.query).toBe("banana");
+  });
+
+  it("notifies open browsers when a meal or journal entry changes", async () => {
+    const topics: string[] = [];
+    const sync = createSyncHub();
+    sync.subscribe((topic) => {
+      topics.push(topic);
+    });
+    const { app } = testApp({ sync });
+    const created = await app.request("/api/meals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "banana", eatenAt: "2026-09-20T12:00:00.000Z" }),
+    });
+    const meal = (await created.json()) as { id: string };
+    await app.request(`/api/meals/${meal.id}`, { method: "DELETE" });
+    const noted = await app.request("/api/journal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: { label: "Nurtec", fields: [{ label: "Taken", type: "event" }] },
+        values: [{ fieldId: "Taken", value: true }],
+      }),
+    });
+    const entry = (await noted.json()) as { id: string; kind: { id: string } };
+    await app.request(`/api/journal/kinds/${entry.kind.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ addFields: [{ label: "Note", type: "text" }] }),
+    });
+    await app.request(`/api/journal/${entry.id}`, { method: "DELETE" });
+    expect(topics).toEqual(["food", "food", "journal", "journal", "journal"]);
+
+    const events = await app.request("/api/events");
+    expect(events.headers.get("content-type")).toContain("text/event-stream");
+    await events.body?.cancel();
   });
 
   it("requires from and to when listing meals", async () => {

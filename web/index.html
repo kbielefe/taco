@@ -51,6 +51,8 @@
           <div class="field">
             <label for="meal">What did you eat?</label>
             <p id="meal-hint" class="hint">Cheerios and milk, or a banana</p>
+          </div>
+          <div class="composer-pin">
             <p id="meal-error" class="error" hidden></p>
             <div class="composer-row">
               <div class="combobox">
@@ -67,19 +69,19 @@
                   enterkeyhint="send"
                   spellcheck="true"
                 />
-                <ul id="suggestions" role="listbox" hidden></ul>
+                <ul id="suggestions" class="suggest-list" role="listbox" hidden></ul>
               </div>
               <button type="submit" id="log-button">Log</button>
             </div>
             <p id="meal-status" class="status" role="status" aria-live="polite"></p>
           </div>
-        </form>
 
-        <section class="diary" aria-labelledby="meals-heading">
-          <h2 id="meals-heading" class="visually-hidden">Logged meals</h2>
-          <p id="empty" class="empty">Nothing logged yet</p>
-          <ol id="meals" class="meals"></ol>
-        </section>
+          <section class="diary" aria-labelledby="meals-heading">
+            <h2 id="meals-heading" class="visually-hidden">Logged meals</h2>
+            <p id="empty" class="empty">Nothing logged yet</p>
+            <ol id="meals" class="meals"></ol>
+          </section>
+        </form>
       </div>
 
       <div id="view-journal" hidden>
@@ -92,6 +94,8 @@
           <div class="field">
             <label for="kind">What do you want to record?</label>
             <p id="kind-hint" class="hint">Weight, a migraine, or a medication</p>
+          </div>
+          <div class="composer-pin">
             <p id="journal-error" class="error" hidden></p>
             <div class="combobox">
               <input
@@ -106,22 +110,22 @@
                 autocomplete="off"
                 spellcheck="true"
               />
-              <ul id="kind-list" role="listbox" hidden></ul>
-            </div>
-            <div id="kind-setup"></div>
-            <div id="entry-fields" class="entry-fields"></div>
-            <div class="composer-actions">
-              <button type="button" id="add-field" class="button-secondary" hidden>Add field</button>
-              <button type="submit" id="journal-log">Log</button>
+              <ul id="kind-list" class="suggest-list" role="listbox" hidden></ul>
             </div>
           </div>
-        </form>
+          <div id="kind-setup"></div>
+          <div id="entry-fields" class="entry-fields"></div>
+          <div class="composer-actions">
+            <button type="button" id="add-field" class="button-secondary" hidden>Add field</button>
+            <button type="submit" id="journal-log">Log</button>
+          </div>
 
-        <section class="diary" aria-labelledby="journal-heading">
-          <h2 id="journal-heading" class="visually-hidden">Journal entries</h2>
-          <p id="journal-empty" class="empty">Nothing logged yet</p>
-          <ol id="journal-entries" class="meals"></ol>
-        </section>
+          <section class="diary" aria-labelledby="journal-heading">
+            <h2 id="journal-heading" class="visually-hidden">Journal entries</h2>
+            <p id="journal-empty" class="empty">Nothing logged yet</p>
+            <ol id="journal-entries" class="meals"></ol>
+          </section>
+        </form>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

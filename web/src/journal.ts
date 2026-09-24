@@ -11,6 +11,8 @@ import {
   type JournalKind,
   type JournalValue,
 } from "./api.js";
+import { mountStringCombobox } from "./combobox.js";
+import { pickSuggestions } from "../../src/log/fuzzy.js";
 import { formatTime, localDayRange } from "./time.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -265,11 +267,18 @@ export function mountJournal(): { load: () => Promise<void> } {
 
   function optionItems(query: string): { label: string; kind: JournalKind | null }[] {
     const needle = normalize(query).toLocaleLowerCase("en-US");
-    const matches = (needle
-      ? kinds.filter((kind) => kind.label.toLocaleLowerCase("en-US").includes(needle))
-      : kinds
-    ).slice(0, 8);
-    const items: { label: string; kind: JournalKind | null }[] = matches.map((kind) => ({ label: kind.label, kind }));
+    const labels = pickSuggestions(
+      kinds.map((kind) => kind.label),
+      query,
+      8,
+    );
+    const items: { label: string; kind: JournalKind | null }[] = [];
+    for (const label of labels) {
+      const kind = kinds.find((item) => item.label === label);
+      if (kind) {
+        items.push({ label: kind.label, kind });
+      }
+    }
     const exact = needle.length > 0 && kinds.some((kind) => sameName(kind.label, query));
     if (needle && !exact) {
       items.push({ label: `Add “${normalize(query)}”`, kind: null });
@@ -342,6 +351,13 @@ export function mountJournal(): { load: () => Promise<void> } {
     renderEntryFields();
     updateAddButton();
     setup.querySelector("select")?.focus();
+  }
+
+  function resetComposer(): void {
+    clearComposer();
+    input.value = "";
+    closeList();
+    input.focus();
   }
 
   function clearComposer(): void {
@@ -606,23 +622,25 @@ export function mountJournal(): { load: () => Promise<void> } {
     return row;
   }
 
-  function textEditor(field: JournalField, key: string): HTMLInputElement {
+  function textEditor(field: JournalField, key: string): HTMLDivElement {
+    const wrap = el("div", "combobox");
     const box = el("input", "text-input");
     box.autocomplete = "off";
     box.spellcheck = true;
     box.setAttribute("aria-label", field.label);
     const listId = `suggest-${key.replace(/[^a-z0-9_-]/gi, "-")}`;
     const suggestions = selected?.suggestions[field.id] ?? [];
-    if (suggestions.length > 0 && !key.startsWith("draft:")) {
-      box.setAttribute("list", listId);
-      const data = el("datalist");
-      data.id = listId;
-      for (const suggestion of suggestions) {
-        const option = el("option");
-        option.value = suggestion;
-        data.append(option);
-      }
-      fieldsHost.append(data);
+    const menu = el("ul", "suggest-list");
+    menu.id = listId;
+    menu.role = "listbox";
+    menu.hidden = true;
+    if (!key.startsWith("draft:")) {
+      mountStringCombobox({
+        input: box,
+        list: menu,
+        idPrefix: listId,
+        getItems: () => pickSuggestions(suggestions, box.value, 8),
+      });
     }
     editors.push({
       key,
@@ -642,7 +660,8 @@ export function mountJournal(): { load: () => Promise<void> } {
         }
       },
     });
-    return box;
+    wrap.append(box, menu);
+    return wrap;
   }
 
   function booleanEditor(label: string, key: string): HTMLDivElement {
@@ -831,12 +850,12 @@ export function mountJournal(): { load: () => Promise<void> } {
     const row = el("li", "meal-row");
     row.dataset.id = entry.id;
     const article = el("article", "meal");
-    const top = el("div", "meal-top journal-top");
+    const top = el("div", "meal-top");
     const time = el("time");
     time.dateTime = entry.at;
     time.textContent = formatTime(entry.at);
     const title = el("h3", "meal-title", entry.kind.label);
-    const end = el("div", "meal-end");
+    const end = el("div", "meal-end single");
     const del = el("button", "icon-button delete");
     del.type = "button";
     del.setAttribute("aria-label", `Delete ${entry.kind.label}`);
@@ -844,13 +863,9 @@ export function mountJournal(): { load: () => Promise<void> } {
     del.addEventListener("click", () => {
       void removeEntry(entry, row);
     });
-    end.append(del);
-    const figure = figureFor(entry);
-    if (figure) {
-      end.append(el("p", "meal-kcal", figure));
-    }
-    top.append(time, title, end);
-    article.append(top);
+    end.append(del, el("p", "meal-kcal", figureFor(entry)));
+    top.append(time, end);
+    article.append(top, title);
     row.append(article);
     return row;
   }
@@ -872,9 +887,15 @@ export function mountJournal(): { load: () => Promise<void> } {
     }
   }
 
+  let refreshSerial = 0;
+
   async function refresh(): Promise<void> {
+    const serial = ++refreshSerial;
     const { from, to } = localDayRange();
     const [nextKinds, nextEntries] = await Promise.all([fetchKinds(), fetchJournal(from, to)]);
+    if (serial !== refreshSerial) {
+      return;
+    }
     kinds = nextKinds;
     entries = nextEntries;
     if (selected) {
@@ -938,12 +959,9 @@ export function mountJournal(): { load: () => Promise<void> } {
       }
       setBusy(true);
       try {
-        const entry = await logJournal({ kind: { label: createLabel, fields: built }, values });
+        await logJournal({ kind: { label: createLabel, fields: built }, values });
         await refresh();
-        const kind = kinds.find((item) => item.id === entry.kind.id);
-        if (kind) {
-          selectExisting(kind);
-        }
+        resetComposer();
       } catch (error) {
         setError(error instanceof Error ? error.message : "Couldn't save that.");
       } finally {
@@ -993,10 +1011,7 @@ export function mountJournal(): { load: () => Promise<void> } {
       }
       await logJournal({ kindId: kind.id, values });
       await refresh();
-      const fresh = kinds.find((item) => item.id === kind.id);
-      if (fresh) {
-        selectExisting(fresh);
-      }
+      resetComposer();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Couldn't save that.");
     } finally {
