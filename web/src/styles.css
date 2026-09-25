@@ -632,10 +632,19 @@ body::before {
   gap: 0.4rem;
 }
 
+.inline-add[hidden] {
+  display: none;
+}
+
 .number-row .text-input,
 .inline-add .text-input {
   flex: 1 1 8rem;
   width: auto;
+}
+
+.inline-add .text-input {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .unit-suffix {
@@ -658,6 +667,19 @@ body::before {
   background: var(--accent);
   border-color: transparent;
   color: var(--accent-fg);
+}
+
+.choice-row .add-option-toggle {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.choice-row .add-option-toggle svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 .chips {

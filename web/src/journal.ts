@@ -224,6 +224,10 @@ function pencilIcon(): SVGSVGElement {
   return strokeIcon(["M12 20h9", "M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"]);
 }
 
+function plusIcon(): SVGSVGElement {
+  return strokeIcon(["M12 5v14", "M5 12h14"]);
+}
+
 export function mountJournal(): { load: () => Promise<void> } {
   const form = required(document.querySelector<HTMLFormElement>("#journal-form"), "journal-form");
   const input = required(document.querySelector<HTMLInputElement>("#kind"), "kind");
@@ -273,6 +277,9 @@ export function mountJournal(): { load: () => Promise<void> } {
     logButton.disabled = busy;
     addFieldButton.disabled = busy;
     editButton.disabled = busy;
+    for (const button of fieldsHost.querySelectorAll<HTMLButtonElement>(".add-option-toggle, .inline-add button")) {
+      button.disabled = busy;
+    }
   }
 
   function closeList(): void {
@@ -360,9 +367,6 @@ export function mountJournal(): { load: () => Promise<void> } {
     editButton.hidden = mode !== "existing";
     editButton.setAttribute("aria-expanded", showEdits ? "true" : "false");
     addFieldButton.hidden = mode !== "create" && !(showEdits && !appending);
-    for (const row of fieldsHost.querySelectorAll<HTMLElement>(".inline-add")) {
-      row.hidden = !showEdits;
-    }
   }
 
   function selectExisting(kind: JournalKind): void {
@@ -663,9 +667,10 @@ export function mountJournal(): { load: () => Promise<void> } {
     if (field.type === "number") {
       block.append(numberEditor(field, key));
     } else if (field.type === "enum" && field.options) {
-      block.append(choiceEditor(field.label, field.options, key));
+      const choices = choiceEditor(field.label, field.options, key);
+      block.append(choices);
       if (selected && mode === "existing" && !key.startsWith("draft:")) {
-        block.append(addOptionRow(field));
+        block.append(addOptionRow(field, choices));
       }
     } else if (field.type === "text") {
       block.append(textEditor(field, key));
@@ -887,8 +892,10 @@ export function mountJournal(): { load: () => Promise<void> } {
     return row;
   }
 
-  function addOptionRow(field: JournalField): HTMLDivElement {
+  function addOptionRow(field: JournalField, choices: HTMLElement): HTMLDivElement {
     const row = el("div", "inline-add");
+    row.id = `add-option-${field.id}`;
+    row.hidden = true;
     const box = el("input", "text-input");
     box.autocomplete = "off";
     box.setAttribute("aria-label", `Add a choice to ${field.label}`);
@@ -903,6 +910,23 @@ export function mountJournal(): { load: () => Promise<void> } {
     button.addEventListener("click", () => {
       void addOption(field, box);
     });
+    const toggle = el("button", "icon-button add-option-toggle");
+    toggle.type = "button";
+    toggle.append(plusIcon());
+    toggle.setAttribute("aria-label", `Add a choice to ${field.label}`);
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-controls", row.id);
+    toggle.addEventListener("click", () => {
+      const open = row.hidden;
+      row.hidden = !open;
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      if (open) {
+        box.focus();
+      } else {
+        toggle.focus();
+      }
+    });
+    choices.append(toggle);
     row.append(box, button);
     return row;
   }
