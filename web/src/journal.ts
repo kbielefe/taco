@@ -328,6 +328,10 @@ export function mountJournal(): { load: () => Promise<void> } {
   }
 
   function renderOptions(): void {
+    if (input.value.trim() === "") {
+      closeList();
+      return;
+    }
     options = optionItems(input.value);
     activeIndex = -1;
     list.replaceChildren();
@@ -1273,6 +1277,10 @@ export function mountJournal(): { load: () => Promise<void> } {
 
   input.addEventListener("keydown", (event) => {
     if (event.key === "ArrowDown") {
+      if (input.value.trim() === "") {
+        closeList();
+        return;
+      }
       event.preventDefault();
       if (list.hidden) {
         renderOptions();

@@ -77,7 +77,15 @@ export function mountCombobox(options: {
     input.setAttribute("aria-expanded", "true");
   }
 
+  function blank(): boolean {
+    return input.value.trim() === "";
+  }
+
   async function load(): Promise<void> {
+    if (blank()) {
+      close();
+      return;
+    }
     const id = ++requestId;
     try {
       const next = await fetchItems(input.value);
@@ -119,6 +127,10 @@ export function mountCombobox(options: {
 
   input.addEventListener("keydown", (event) => {
     if (event.key === "ArrowDown") {
+      if (blank()) {
+        close();
+        return;
+      }
       event.preventDefault();
       if (list.hidden) {
         void load();
@@ -179,7 +191,15 @@ export function mountStringCombobox(options: {
     }
   }
 
+  function blank(): boolean {
+    return input.value.trim() === "";
+  }
+
   function render(): void {
+    if (blank()) {
+      close();
+      return;
+    }
     items = getItems();
     activeIndex = -1;
     list.replaceChildren();
@@ -230,6 +250,10 @@ export function mountStringCombobox(options: {
   });
   input.addEventListener("keydown", (event) => {
     if (event.key === "ArrowDown") {
+      if (blank()) {
+        close();
+        return;
+      }
       event.preventDefault();
       if (list.hidden) {
         render();
