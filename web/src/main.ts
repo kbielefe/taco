@@ -35,6 +35,7 @@ const nodes = {
   totalCarb: required(document.querySelector<HTMLSpanElement>("#total-carb"), "total-carb"),
   totalFiber: required(document.querySelector<HTMLSpanElement>("#total-fiber"), "total-fiber"),
   calorieTarget: required(document.querySelector<HTMLParagraphElement>("#calorie-target"), "calorie-target"),
+  calorieWhy: required(document.querySelector<HTMLButtonElement>("#calorie-why"), "calorie-why"),
   calorieNote: required(document.querySelector<HTMLParagraphElement>("#calorie-target-note"), "calorie-target-note"),
   form: required(document.querySelector<HTMLFormElement>("#log-form"), "log-form"),
   input: required(document.querySelector<HTMLInputElement>("#meal"), "meal"),
@@ -76,13 +77,12 @@ function paintRecommendation(eatenKcal: number): void {
   if (recommendationProblem) {
     nodes.calorieTarget.hidden = true;
     nodes.calorieTarget.textContent = "";
-    nodes.calorieNote.hidden = false;
-    nodes.calorieNote.textContent = recommendationProblem;
+    setRecommendationReason(recommendationProblem, true);
     return;
   }
   if (!recommendation) {
     nodes.calorieTarget.hidden = true;
-    nodes.calorieNote.hidden = true;
+    setRecommendationReason("", false);
     return;
   }
   const minKcal = recommendation.minKcal ?? recommendation.kcal;
@@ -90,13 +90,39 @@ function paintRecommendation(eatenKcal: number): void {
   if (minKcal === null || maxKcal === null) {
     nodes.calorieTarget.hidden = true;
     nodes.calorieTarget.textContent = "";
+    setRecommendationReason(recommendation.message, true);
   } else {
     nodes.calorieTarget.hidden = false;
     nodes.calorieTarget.textContent = recommendationLine(minKcal, maxKcal, eatenKcal);
+    setRecommendationReason(recommendation.message, false);
   }
-  nodes.calorieNote.hidden = recommendation.message === "";
-  nodes.calorieNote.textContent = recommendation.message;
 }
+
+function setRecommendationReason(message: string, open: boolean): void {
+  const shown = message !== "";
+  nodes.calorieNote.textContent = message;
+  if (!shown) {
+    nodes.calorieWhy.hidden = true;
+    nodes.calorieWhy.setAttribute("aria-expanded", "false");
+    nodes.calorieNote.hidden = true;
+    return;
+  }
+  if (open) {
+    nodes.calorieWhy.hidden = true;
+    nodes.calorieWhy.setAttribute("aria-expanded", "false");
+    nodes.calorieNote.hidden = false;
+    return;
+  }
+  nodes.calorieWhy.hidden = false;
+  const expanded = nodes.calorieWhy.getAttribute("aria-expanded") === "true";
+  nodes.calorieNote.hidden = !expanded;
+}
+
+nodes.calorieWhy.addEventListener("click", () => {
+  const expanded = nodes.calorieWhy.getAttribute("aria-expanded") === "true";
+  nodes.calorieWhy.setAttribute("aria-expanded", expanded ? "false" : "true");
+  nodes.calorieNote.hidden = expanded || nodes.calorieNote.textContent === "";
+});
 
 function recommendationLine(minKcal: number, maxKcal: number, eaten: number): string {
   const range =

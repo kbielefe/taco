@@ -176,8 +176,20 @@ body::before {
   letter-spacing: 0;
 }
 
+.kcal-target-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.1rem;
+  margin-top: 0.35rem;
+}
+
+.kcal-target-row:not(:has(:not([hidden]))) {
+  display: none;
+}
+
 .kcal-target {
-  margin: 0.35rem 0 0;
+  margin: 0;
+  min-width: 0;
   font-size: 1.15rem;
   font-weight: 650;
   letter-spacing: -0.02em;
@@ -493,6 +505,18 @@ body::before {
 
 .icon-button[aria-expanded="true"] {
   color: var(--accent);
+}
+
+.icon-button.kcal-why {
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-top: 0.05rem;
+  border-radius: 999px;
+}
+
+.icon-button.kcal-why svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 .delete:hover,

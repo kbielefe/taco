@@ -25,7 +25,24 @@
             <span id="total-kcal">0</span>
             <span class="kcal-unit">kcal</span>
           </p>
-          <p class="kcal-target" id="calorie-target" hidden></p>
+          <div class="kcal-target-row">
+            <p class="kcal-target" id="calorie-target" hidden></p>
+            <button
+              type="button"
+              class="icon-button kcal-why"
+              id="calorie-why"
+              hidden
+              aria-expanded="false"
+              aria-controls="calorie-target-note"
+              aria-label="Why this recommendation"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M12 16v-4"></path>
+                <path d="M12 8h.01"></path>
+              </svg>
+            </button>
+          </div>
           <p class="kcal-target-note" id="calorie-target-note" hidden></p>
           <ul class="macro-row">
             <li class="macro protein">
