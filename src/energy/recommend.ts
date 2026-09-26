@@ -21,6 +21,20 @@ export const SAFE_MINIMUM_KCAL: Record<Sex, number> = {
   female: 1200,
 };
 
+// Helms, Aragon, and Fitschen, JISSN 2014: losing faster than about 1% of
+// body weight a week costs more muscle. That is the low end of the daily range.
+export const FAST_LOSS_FRACTION_PER_WEEK = 0.01;
+
+// AHA/ACC/TOS: under 800 kcal/day is a very-low-calorie diet. Those days are
+// unfinished logs as often as real intake, so they do not move the range.
+export const VERY_LOW_INTAKE_KCAL = 800;
+
+// A catch-up day may rise this far above maintenance. Further than that is a feast.
+export const CATCH_UP_ABOVE_MAINTENANCE_KCAL = DAILY_DEFICIT_KCAL;
+
+// Ignore a few dozen calories of noise before saying the range moved.
+const BANK_SHIFT_KCAL = 50;
+
 // A shorter gap is mostly day-to-day noise, not a week of change.
 export const ADAPTIVE_MIN_SPAN_DAYS = 3;
 export const ADAPTIVE_CLAMP_LOW = 0.6;
@@ -53,7 +67,10 @@ export interface WeightObservation {
 }
 
 export interface DayRecommendation {
+  /** Today's pace after the previous 7 days, kept inside the shown range. */
   kcal: number | null;
+  minKcal: number | null;
+  maxKcal: number | null;
   message: string;
   goal: "lose" | "maintain" | null;
   basis: "week" | "partial" | "body" | null;
@@ -116,16 +133,39 @@ export function recommendDay(input: {
   const minimum = SAFE_MINIMUM_KCAL[profile.sex];
   const goalKcal = losing ? tdee - DAILY_DEFICIT_KCAL : tdee;
   const limitedByMinimum = goalKcal < minimum;
-  const kcal = Math.max(roundTo10(goalKcal), minimum);
+  const pace = Math.max(roundTo10(goalKcal), minimum);
+  const lowAnchor = losing ? fastestIntake(tdee, weightKg, pace, minimum) : pace;
+  const halfLow = pace - lowAnchor;
+  const maintenance = roundTo10(tdee);
+  // The ordinary top stays at or below maintenance. The two sides match unless that cap binds.
+  const halfHigh = Math.min(halfLow, Math.max(0, maintenance - pace));
+  const shift = loggedShift(dayTotals, pace);
+  const center = pace + shift;
+  const highCap = maintenance + CATCH_UP_ABOVE_MAINTENANCE_KCAL;
+  const uncappedMax = roundTo10(center + halfHigh);
+  let maxKcal = clamp(uncappedMax, minimum, highCap);
+  let minKcal = clamp(roundTo10(center - halfLow), minimum, maxKcal);
+  const caughtUp = uncappedMax > highCap && highCap > minimum;
+  if (caughtUp) {
+    maxKcal = highCap;
+    minKcal = clamp(highCap - halfLow - halfHigh, minimum, maxKcal);
+  }
+  const kcal = clamp(roundTo10(center), minKcal, maxKcal);
 
   return {
     kcal,
+    minKcal,
+    maxKcal,
     message: recommendationMessage({
       losing,
       under: bmi < HEALTHY_BMI_MIN,
       basis,
-      limitedByMinimum,
       minimum,
+      minKcal,
+      maxKcal,
+      kcal,
+      bank: shift >= BANK_SHIFT_KCAL ? "up" : shift <= -BANK_SHIFT_KCAL ? "down" : "none",
+      caughtUp,
     }),
     goal: losing ? "lose" : "maintain",
     basis,
@@ -138,6 +178,8 @@ export function recommendDay(input: {
 function unavailable(message: string): DayRecommendation {
   return {
     kcal: null,
+    minKcal: null,
+    maxKcal: null,
     message,
     goal: null,
     basis: null,
@@ -145,6 +187,24 @@ function unavailable(message: string): DayRecommendation {
     minimumKcal: null,
     bmi: null,
   };
+}
+
+function fastestIntake(tdee: number, weightKg: number, pace: number, minimum: number): number {
+  const deficit = (FAST_LOSS_FRACTION_PER_WEEK * weightKg * LB_PER_KG * KCAL_PER_POUND) / HISTORY_DAYS;
+  if (deficit <= DAILY_DEFICIT_KCAL) {
+    return pace;
+  }
+  return Math.min(pace, Math.max(minimum, roundTo10(tdee - deficit)));
+}
+
+function loggedShift(dayTotals: number[], pace: number): number {
+  let shift = 0;
+  for (const kcal of dayTotals) {
+    if (kcal >= VERY_LOW_INTAKE_KCAL) {
+      shift += pace - kcal;
+    }
+  }
+  return shift;
 }
 
 interface WeighIn {
@@ -261,8 +321,12 @@ function recommendationMessage(input: {
   losing: boolean;
   under: boolean;
   basis: "week" | "partial" | "body";
-  limitedByMinimum: boolean;
   minimum: number;
+  minKcal: number;
+  maxKcal: number;
+  kcal: number;
+  bank: "up" | "down" | "none";
+  caughtUp: boolean;
 }): string {
   const basis =
     input.basis === "week"
@@ -271,10 +335,55 @@ function recommendationMessage(input: {
         ? "partly from the last 7 days"
         : "from your body size";
   const aim = input.losing ? "Aiming to lose 2 lb a week" : "Holding your weight";
-  const floor = input.limitedByMinimum ? `, held at ${input.minimum.toLocaleString("en-US")} kcal, a safe minimum` : "";
+  const atFloor = input.minKcal === input.minimum && input.maxKcal === input.minimum;
+  const floor = atFloor ? `, held at ${input.minimum.toLocaleString("en-US")} kcal, a safe minimum` : "";
   const bmi = input.losing ? "" : input.under ? " BMI is below the healthy range." : " BMI is in the healthy range.";
   const refine = input.basis === "body" ? " A full week of food and weight will refine this." : "";
-  return `${aim}, ${basis}${floor}.${bmi}${refine}`;
+  return `${aim}, ${basis}${floor}.${movementSentence(input)}${bmi}${refine}`;
+}
+
+function movementSentence(input: {
+  losing: boolean;
+  minKcal: number;
+  maxKcal: number;
+  kcal: number;
+  bank: "up" | "down" | "none";
+  minimum: number;
+  caughtUp: boolean;
+}): string {
+  const ranged = input.minKcal < input.maxKcal;
+  const atFloor = input.minKcal === input.minimum && input.maxKcal === input.minimum;
+  const pace = input.losing ? "a 2 lb a week loss" : "maintenance";
+  const overPace = input.losing ? "a 2 lb a week pace" : "maintenance";
+  if (input.caughtUp && input.bank === "up" && ranged) {
+    return ` The range is higher because the previous days were under ${overPace}. The top is as high as a catch-up day should go, and the bottom moved up so today is not low enough to lose weight too fast.`;
+  }
+  if (input.caughtUp && input.bank === "up") {
+    return ` Today's amount is as high as a catch-up day should go, because the previous days were under ${overPace}.`;
+  }
+  if (input.bank === "up" && ranged) {
+    return ` The range is higher so the previous days and today can still average ${pace}. The bottom moved up so today is not low enough to lose weight too fast.`;
+  }
+  if (input.bank === "up") {
+    return ` Today's amount is higher so the previous days and today can still average ${pace}.`;
+  }
+  if (input.bank === "down" && atFloor) {
+    return " The previous days were over that pace.";
+  }
+  if (input.bank === "down" && ranged) {
+    return ` The range is lower because the previous days were over ${overPace}.`;
+  }
+  if (input.bank === "down") {
+    return ` Today's amount is lower because the previous days were over ${overPace}.`;
+  }
+  if (input.losing && ranged) {
+    const about =
+      input.minKcal < input.kcal && input.kcal < input.maxKcal
+        ? `, about ${input.kcal.toLocaleString("en-US")} kcal,`
+        : "";
+    return ` The middle of the range${about} holds that pace. The bottom keeps a low day from losing weight too fast.`;
+  }
+  return "";
 }
 
 function average(values: number[]): number {

@@ -43,6 +43,8 @@ describe("recommendDay", () => {
       observations: [weight(new Date("2026-09-20T12:00:00.000Z"), 220)],
     });
     expect(result.kcal).toBe(1500);
+    expect(result.minKcal).toBe(1500);
+    expect(result.maxKcal).toBe(1500);
     expect(result.goal).toBe("lose");
     expect(result.basis).toBe("body");
     expect(result.limitedByMinimum).toBe(true);
@@ -62,6 +64,8 @@ describe("recommendDay", () => {
     });
     expect(result).toMatchObject({
       kcal: 1930,
+      minKcal: 1930,
+      maxKcal: 1930,
       goal: "maintain",
       basis: "body",
       limitedByMinimum: false,
@@ -102,7 +106,65 @@ describe("recommendDay", () => {
       observations: [weight(today, 220)],
     });
     expect(result.kcal).toBe(1590);
+    expect(result.minKcal).toBe(1500);
+    expect(result.maxKcal).toBe(1680);
     expect(result.limitedByMinimum).toBe(false);
+    expect(result.message).toMatch(/about 1,590 kcal/);
+    expect(result.message).toMatch(/too fast/);
+  });
+
+  it("raises today's range after a day near the bottom", () => {
+    const result = recommendDay({
+      profile: profile({ activity: "light" }),
+      today,
+      intakes: meals(1500, [3]),
+      observations: [weight(today, 220)],
+    });
+    expect(result).toMatchObject({ minKcal: 1590, kcal: 1680, maxKcal: 1770 });
+    expect(result.message).toMatch(/range is higher/);
+    expect(result.message).toMatch(/too fast/);
+  });
+
+  it("lowers today's top after a day near the top", () => {
+    const result = recommendDay({
+      profile: profile({ activity: "light" }),
+      today,
+      intakes: meals(1680, [3]),
+      observations: [weight(today, 220)],
+    });
+    expect(result).toMatchObject({ minKcal: 1500, kcal: 1500, maxKcal: 1590 });
+    expect(result.message).toMatch(/range is lower/);
+  });
+
+  it("moves both ends up after a week at the bottom so the stretch averages a 2 lb pace", () => {
+    const result = recommendDay({
+      profile: profile({ activity: "light" }),
+      today,
+      intakes: meals(1500, [0, 1, 2, 3, 4, 5, 6]),
+      observations: [weight(today, 220)],
+    });
+    expect(result).toMatchObject({ minKcal: 2130, kcal: 2220, maxKcal: 2310 });
+    const week = 7 * 1500 + result.kcal!;
+    expect(week / 8).toBe(1590);
+  });
+
+  it("ignores a day under 800 kcal and caps a very low week", () => {
+    const ignored = recommendDay({
+      profile: profile({ activity: "light" }),
+      today,
+      intakes: meals(400, [0, 1, 2, 3, 4, 5, 6]),
+      observations: [weight(today, 220)],
+    });
+    expect(ignored).toMatchObject({ minKcal: 1500, kcal: 1590, maxKcal: 1680 });
+
+    const capped = recommendDay({
+      profile: profile({ activity: "light" }),
+      today,
+      intakes: meals(800, [0, 1, 2, 3, 4, 5, 6]),
+      observations: [weight(today, 220)],
+    });
+    expect(capped).toMatchObject({ minKcal: 3410, kcal: 3590, maxKcal: 3590 });
+    expect(capped.message).toMatch(/catch-up day/);
   });
 
   it("reads pounds and kilograms, and ignores other journal entries", () => {
@@ -177,8 +239,17 @@ describe("recommendDay", () => {
       ],
       observations: [weight(from, 220), weight(today, 219)],
     });
-    expect(result).toMatchObject({ kcal: 2000, goal: "lose", basis: "week", limitedByMinimum: false });
-    expect(result.message).toBe("Aiming to lose 2 lb a week, from the last 7 days.");
+    expect(result).toMatchObject({
+      kcal: 1500,
+      minKcal: 1500,
+      maxKcal: 1500,
+      goal: "lose",
+      basis: "week",
+      limitedByMinimum: false,
+    });
+    expect(result.message).toBe(
+      "Aiming to lose 2 lb a week, from the last 7 days, held at 1,500 kcal, a safe minimum. The previous days were over that pace.",
+    );
   });
 
   it("blends a partial week with the body-size estimate", () => {
@@ -188,8 +259,9 @@ describe("recommendDay", () => {
       intakes: meals(2500, [0, 2, 4]),
       observations: [weight(from, 220), weight(today, 219)],
     });
-    expect(result).toMatchObject({ kcal: 1580, basis: "partial", goal: "lose" });
+    expect(result).toMatchObject({ kcal: 1500, minKcal: 1500, maxKcal: 1500, basis: "partial", goal: "lose" });
     expect(result.message).toMatch(/partly from the last 7 days/);
+    expect(result.message).toMatch(/1,500 kcal/);
   });
 
   it("does not let an under-logged week sink the target", () => {
@@ -210,6 +282,8 @@ describe("recommendDay", () => {
       observations: [weight(today, 180)],
     });
     expect(result.kcal).toBeNull();
+    expect(result.minKcal).toBeNull();
+    expect(result.maxKcal).toBeNull();
     expect(result.message).toBe("Set BIRTH_YEAR in .env.");
   });
 });

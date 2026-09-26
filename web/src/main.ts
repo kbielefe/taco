@@ -85,18 +85,32 @@ function paintRecommendation(eatenKcal: number): void {
     nodes.calorieNote.hidden = true;
     return;
   }
-  if (recommendation.kcal === null) {
+  const minKcal = recommendation.minKcal ?? recommendation.kcal;
+  const maxKcal = recommendation.maxKcal ?? recommendation.kcal;
+  if (minKcal === null || maxKcal === null) {
     nodes.calorieTarget.hidden = true;
     nodes.calorieTarget.textContent = "";
   } else {
-    const left = recommendation.kcal - eatenKcal;
-    const progress =
-      eatenKcal > 0 ? (left >= 0 ? ` · ${formatKcal(left)} left` : ` · ${formatKcal(-left)} over`) : "";
     nodes.calorieTarget.hidden = false;
-    nodes.calorieTarget.textContent = `Recommended ${formatKcal(recommendation.kcal)} kcal${progress}`;
+    nodes.calorieTarget.textContent = recommendationLine(minKcal, maxKcal, eatenKcal);
   }
   nodes.calorieNote.hidden = recommendation.message === "";
   nodes.calorieNote.textContent = recommendation.message;
+}
+
+function recommendationLine(minKcal: number, maxKcal: number, eaten: number): string {
+  const range =
+    minKcal === maxKcal ? formatKcal(maxKcal) : `${formatKcal(minKcal)} to ${formatKcal(maxKcal)}`;
+  if (eaten <= 0) {
+    return `Recommended ${range} kcal`;
+  }
+  if (eaten > maxKcal) {
+    return `Recommended ${range} kcal · ${formatKcal(eaten - maxKcal)} over`;
+  }
+  if (minKcal !== maxKcal && eaten < minKcal) {
+    return `Recommended ${range} kcal · ${formatKcal(minKcal - eaten)} to ${formatKcal(maxKcal - eaten)} left`;
+  }
+  return `Recommended ${range} kcal · ${formatKcal(maxKcal - eaten)} left`;
 }
 
 function paintList(): void {

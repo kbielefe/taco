@@ -68,6 +68,8 @@ async function readError(response: Response): Promise<ApiError> {
 
 export interface EnergyRecommendation {
   kcal: number | null;
+  minKcal: number | null;
+  maxKcal: number | null;
   message: string;
   goal: "lose" | "maintain" | null;
   basis: "week" | "partial" | "body" | null;

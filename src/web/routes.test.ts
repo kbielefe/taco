@@ -437,8 +437,10 @@ describe("calorie recommendation", () => {
 
     const res = await api.request("/api/recommendation?today=2026-09-21T00:00:00.000Z");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { kcal: number; goal: string; basis: string };
+    const body = (await res.json()) as { kcal: number; minKcal: number; maxKcal: number; goal: string; basis: string };
     expect(body.kcal).toBe(1770);
+    expect(body.minKcal).toBe(1500);
+    expect(body.maxKcal).toBe(2040);
     expect(body.goal).toBe("lose");
     expect(body.basis).toBe("body");
   });

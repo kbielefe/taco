@@ -182,6 +182,7 @@ body::before {
   font-weight: 650;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: break-word;
 }
 
 .kcal-target-note {
