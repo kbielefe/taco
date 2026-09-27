@@ -28,7 +28,7 @@ const viewJournal = required(document.querySelector<HTMLElement>("#view-journal"
 const viewLinks = [...document.querySelectorAll<HTMLAnchorElement>(".views a")];
 
 const nodes = {
-  dateLabel: required(document.querySelector<HTMLParagraphElement>("#date-label"), "date-label"),
+  dateLabel: required(document.querySelector<HTMLHeadingElement>("#date-label"), "date-label"),
   totalKcal: required(document.querySelector<HTMLSpanElement>("#total-kcal"), "total-kcal"),
   totalProtein: required(document.querySelector<HTMLSpanElement>("#total-protein"), "total-protein"),
   totalFat: required(document.querySelector<HTMLSpanElement>("#total-fat"), "total-fat"),
@@ -243,7 +243,7 @@ function viewFromPath(path: string): "food" | "journal" {
 function show(view: "food" | "journal"): void {
   viewFood.hidden = view !== "food";
   viewJournal.hidden = view !== "journal";
-  document.title = view === "journal" ? "Today · Journal" : "Today · Food";
+  document.title = view === "journal" ? "Taco · Journal" : "Taco · Food";
   for (const link of viewLinks) {
     if (link.dataset.view === view) {
       link.setAttribute("aria-current", "page");
