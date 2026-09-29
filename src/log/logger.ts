@@ -7,7 +7,7 @@ import { FoodLogAiError, FoodLogConfigError, FoodLogMatchError } from "./errors.
 import { candidateIds, clampGrams, compactSearchCandidate, fusedSearchFoods } from "./match.js";
 import { macrosForGrams, sumMacros, tryMacrosForGrams, withSearchNutrients } from "./nutrients.js";
 import { searchQueriesForItem } from "./parse.js";
-import { alphabetical, fuzzyMatch } from "./fuzzy.js";
+import { matchRank } from "./fuzzy.js";
 import { cacheResolution, QUERY_CACHE_PREFIX, queryCacheKey, suggestionFromCacheEntry, normalizeQuery } from "./query-cache.js";
 import { MongoFoodStore } from "./store.js";
 import {
@@ -30,6 +30,16 @@ import {
 
 const SEARCH_PAGE_SIZE = 8;
 const SUGGEST_POOL = 200;
+
+function closerRank(left: number | null, right: number | null): number | null {
+  if (left === null) {
+    return right;
+  }
+  if (right === null) {
+    return left;
+  }
+  return Math.min(left, right);
+}
 
 export interface FoodLoggerOptions {
   fdc: FdcLookup;
@@ -102,31 +112,26 @@ export class FoodLogger {
       keyPrefix: QUERY_CACHE_PREFIX,
       limit: SUGGEST_POOL,
     });
-    const recent: string[] = [];
-    const byQuery = new Map<string, FoodLogSuggestion>();
+    const ranked: { suggestion: FoodLogSuggestion; rank: number; order: number }[] = [];
+    const seen = new Set<string>();
     for (const entry of entries) {
       const suggestion = suggestionFromCacheEntry(entry);
       if (!suggestion) {
         continue;
       }
       const key = normalizeQuery(suggestion.query);
-      if (byQuery.has(key)) {
+      if (seen.has(key)) {
         continue;
       }
-      if (normalized && !fuzzyMatch(normalized, suggestion.query) && !fuzzyMatch(normalized, suggestion.description)) {
+      const rank = closerRank(matchRank(normalized, suggestion.query), matchRank(normalized, suggestion.description));
+      if (rank === null) {
         continue;
       }
-      byQuery.set(key, suggestion);
-      recent.push(suggestion.query);
+      seen.add(key);
+      ranked.push({ suggestion, rank, order: ranked.length });
     }
-    const shown: FoodLogSuggestion[] = [];
-    for (const query of alphabetical(recent.slice(0, limit))) {
-      const suggestion = byQuery.get(normalizeQuery(query));
-      if (suggestion) {
-        shown.push(suggestion);
-      }
-    }
-    return shown;
+    ranked.sort((left, right) => left.rank - right.rank || left.order - right.order);
+    return ranked.slice(0, limit).map((item) => item.suggestion);
   }
 
   /** Database behind this logger, when it owns a Mongo client. Used by the read-only MCP endpoint. */

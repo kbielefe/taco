@@ -1,63 +1,108 @@
 const RECENT_DISPLAY_LIMIT = 8;
+/** Above any contiguous-substring penalty (position and leftover length). */
+const TOKEN_MATCH = 10_000_000;
+const SUBSEQUENCE_TOKEN = 1_000_000;
+const TYPO_TOKEN = 2_000_000;
 
 export function fuzzyMatch(query: string, text: string): boolean {
+  return matchRank(query, text) !== null;
+}
+
+/**
+ * Lower is a closer match. `null` means it does not match.
+ * An empty query ties everything at 0 so recency decides.
+ */
+export function matchRank(query: string, text: string): number | null {
   const needle = normalize(query);
   const hay = normalize(text);
   if (needle.length === 0) {
-    return true;
+    return 0;
   }
-  if (hay.includes(needle)) {
-    return true;
+  if (hay === needle) {
+    return 0;
+  }
+  const at = hay.indexOf(needle);
+  if (at >= 0) {
+    return 1_000 + at * 1_000 + (hay.length - needle.length);
   }
   const tokens = needle.split(" ");
-  return tokens.every((token) => tokenHits(token, hay));
-}
-
-export function alphabetical(values: readonly string[]): string[] {
-  return values.slice().sort((a, b) => a.localeCompare(b, "en-US", { sensitivity: "base" }));
+  let total = TOKEN_MATCH;
+  for (const token of tokens) {
+    const rank = tokenRank(token, hay);
+    if (rank === null) {
+      return null;
+    }
+    total += rank;
+  }
+  return total;
 }
 
 export function pickSuggestions(valuesInRecentOrder: readonly string[], query: string, limit = RECENT_DISPLAY_LIMIT): string[] {
-  const matches: string[] = [];
+  const ranked: { value: string; rank: number; order: number }[] = [];
   const seen = new Set<string>();
   for (const value of valuesInRecentOrder) {
     const key = normalize(value);
-    if (key.length === 0 || seen.has(key) || !fuzzyMatch(query, value)) {
+    if (key.length === 0 || seen.has(key)) {
+      continue;
+    }
+    const rank = matchRank(query, value);
+    if (rank === null) {
       continue;
     }
     seen.add(key);
-    matches.push(value);
-    if (matches.length >= limit) {
-      break;
-    }
+    ranked.push({ value, rank, order: ranked.length });
   }
-  return alphabetical(matches);
+  ranked.sort((a, b) => a.rank - b.rank || a.order - b.order);
+  return ranked.slice(0, limit).map((item) => item.value);
 }
 
-function tokenHits(token: string, hay: string): boolean {
-  if (token.length === 0 || hay.includes(token)) {
-    return true;
+function tokenRank(token: string, hay: string): number | null {
+  const at = hay.indexOf(token);
+  if (token.length === 0 || at >= 0) {
+    return at * 1_000 + Math.max(0, hay.length - token.length);
   }
-  if (token.length >= 2 && isSubsequence(token, hay)) {
-    return true;
+  const skipped = token.length >= 2 ? subsequenceSkip(token, hay) : null;
+  if (skipped !== null) {
+    return SUBSEQUENCE_TOKEN + skipped;
   }
   if (token.length < 4) {
-    return false;
+    return null;
   }
-  return hay.split(" ").some((word) => editDistanceAtMost(token, word, 1));
+  const typo = typoRank(token, hay);
+  return typo === null ? null : TYPO_TOKEN + typo;
 }
 
-function isSubsequence(needle: string, hay: string): boolean {
+function subsequenceSkip(needle: string, hay: string): number | null {
   let index = 0;
-  for (const char of hay) {
-    if (char === needle[index]) {
-      index += 1;
+  let start = -1;
+  for (let cursor = 0; cursor < hay.length; cursor += 1) {
+    if (hay[cursor] !== needle[index]) {
+      continue;
     }
+    if (start < 0) {
+      start = cursor;
+    }
+    index += 1;
     if (index === needle.length) {
-      return true;
+      return cursor - start - (needle.length - 1);
     }
   }
-  return false;
+  return null;
+}
+
+function typoRank(token: string, hay: string): number | null {
+  let best: number | null = null;
+  let offset = 0;
+  for (const word of hay.split(" ")) {
+    if (editDistanceAtMost(token, word, 1)) {
+      const score = Math.abs(token.length - word.length) * 1_000 + offset;
+      if (best === null || score < best) {
+        best = score;
+      }
+    }
+    offset += word.length + 1;
+  }
+  return best;
 }
 
 function editDistanceAtMost(left: string, right: string, max: number): boolean {

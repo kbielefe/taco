@@ -31,7 +31,7 @@ async function remember(cache: MemoryCacheStore, query: string, description = qu
 }
 
 describe("FoodLogger.suggest", () => {
-  it("fuzzy-matches, keeps the most recent hits, and returns them alphabetically", async () => {
+  it("fuzzy-matches, then sorts the closest hit first and breaks ties by recency", async () => {
     const cache = new MemoryCacheStore();
     await remember(cache, "banana", "Bananas, raw");
     await remember(cache, "Banana bread", "Bread");
@@ -44,7 +44,13 @@ describe("FoodLogger.suggest", () => {
     expect((await logger.suggest("milk")).map((item) => item.query)).toEqual(["Cheerios and milk"]);
     expect((await logger.suggest("nana")).map((item) => item.query)).toEqual(["banana", "Banana bread"]);
     expect((await logger.suggest("oats")).map((item) => item.query)).toEqual(["oatmeal"]);
-    expect((await logger.suggest("a", 2)).map((item) => item.query)).toEqual(["Cheerios and milk", "oatmeal"]);
+    expect((await logger.suggest("a", 2)).map((item) => item.query)).toEqual(["banana", "oatmeal"]);
+    expect((await logger.suggest("")).map((item) => item.query)).toEqual([
+      "oatmeal",
+      "Cheerios and milk",
+      "Banana bread",
+      "banana",
+    ]);
     expect(await logger.suggest("zz")).toEqual([]);
   });
 });

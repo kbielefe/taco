@@ -14,9 +14,12 @@ describe("fuzzyMatch", () => {
 });
 
 describe("pickSuggestions", () => {
-  it("keeps the most recent matches, then shows them alphabetically", () => {
+  it("sorts the closest match first and breaks ties by most recently used", () => {
     const recentFirst = ["oatmeal", "Banana bread", "banana", "milk"];
-    expect(pickSuggestions(recentFirst, "a", 2)).toEqual(["Banana bread", "oatmeal"]);
+    expect(pickSuggestions(recentFirst, "a", 2)).toEqual(["banana", "oatmeal"]);
     expect(pickSuggestions(["Banana bread", "banana"], "nana", 8)).toEqual(["banana", "Banana bread"]);
+    expect(pickSuggestions(["toaster", "toast", "oat toast"], "toast", 8)).toEqual(["toast", "toaster", "oat toast"]);
+    expect(pickSuggestions(["apple jam", "apple pie"], "apple", 8)).toEqual(["apple jam", "apple pie"]);
+    expect(pickSuggestions(["oatmeal", "banana"], "", 8)).toEqual(["oatmeal", "banana"]);
   });
 });
