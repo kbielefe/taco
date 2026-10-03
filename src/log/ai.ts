@@ -31,11 +31,6 @@ export function readReasoningEffort(explicit?: string): XaiReasoningEffort {
   return value as XaiReasoningEffort;
 }
 
-/** grok-4.5, grok-4.6, and grok-4.7 always reason. Other models do not take this field. */
-export function modelUsesReasoningEffort(model: string): boolean {
-  return /^grok-4\.(5|6|7)(?:$|[^0-9])/.test(model);
-}
-
 export class XaiFoodLogAi implements FoodLogAi {
   private client: OpenAI | undefined;
   private readonly apiKey: string | undefined;
@@ -83,7 +78,7 @@ export class XaiFoodLogAi implements FoodLogAi {
     try {
       const completion = await this.getClient().chat.completions.parse({
         model: this.model,
-        ...(modelUsesReasoningEffort(this.model) ? { reasoning_effort: this.reasoningEffort } : {}),
+        reasoning_effort: this.reasoningEffort,
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
