@@ -3,7 +3,7 @@ import type { FdcDataType, FoodItem, GetFoodOptions, SearchFoodsOptions, SearchR
 
 export const FOOD_LOG_CACHE_SOURCE = "food-log";
 export const QUERY_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-export const DEFAULT_FOOD_LOG_MODEL = "grok-4.6";
+export const DEFAULT_FOOD_LOG_MODEL = "grok-4.20-non-reasoning";
 export const HEALTH_DB = "health";
 export const FOOD_COLLECTION = "food";
 export const CACHE_COLLECTION = "cache";
