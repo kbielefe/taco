@@ -12,7 +12,9 @@ Text has text and variant "title" or "body". Use plain text, not HTML.
 LineChart and BarChart have title, unit, and series. Use LineChart for a change over time and BarChart for separate categories.
 A series has name and points. A point has label and value. Use at most ${MAX_SERIES} series and ${MAX_POINTS} points in each series.
 Name macro series Protein, Fat, Carbohydrate, and Fiber.
-Call show only when a chart helps. Otherwise answer in a few sentences and do not call show.`;
+Call show for any series, comparison, or change over time, even when the user did not ask for a chart.
+The chart is the answer. Add a Text body only for one short sentence the chart cannot show, and do not repeat its numbers.
+Skip show only for a single fact, a yes or no, or a non-numeric list, and then use one short sentence.`;
 
 const chartComponent = {
   type: "object",

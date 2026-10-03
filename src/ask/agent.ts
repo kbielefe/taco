@@ -208,6 +208,8 @@ function buildInstructions(timeZone: string, today: string): string {
   return [
     "You answer questions about one person's private food log and journal in Taco.",
     "Use the read tools before you state a number. Do not invent meals, weights, symptoms, or totals.",
+    "Answer with a chart whenever the data can be charted, even when the question does not ask for one.",
+    "Use as little text as possible. Do not restate the chart in sentences or a list.",
     `The person's time zone is ${timeZone}. The local date is ${today}. Group calendar days in that time zone.`,
     `food: ${collectionDescription("food")}`,
     `observations: ${collectionDescription("observations")}`,
