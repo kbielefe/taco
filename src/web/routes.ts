@@ -13,9 +13,6 @@ import { parseIsoDate, serializeKind, serializeMeal, serializeObservation, type 
 import type { DataCatalog } from "../mcp/catalog.js";
 import { handleMcpRequest } from "../mcp/http.js";
 import { createSyncHub, type SyncHub, type SyncTopic } from "./sync.js";
-import { handleAlexa, deviceTimeZone, type AlexaDeps } from "../alexa/handle.js";
-import { verifyAlexaSignature } from "../alexa/signature.js";
-import { mountLogin, type LoginDeps } from "./login.js";
 
 const SYNC_PING_MS = 25_000;
 
@@ -43,29 +40,9 @@ export interface AppDeps {
   sync?: SyncHub;
   /** Read-only health data. When omitted, POST /mcp answers 503. */
   data?: DataCatalog;
-  /** Google login. When omitted, the API stays open, which is how local tests run. */
-  login?: LoginDeps;
-  alexaNow?: () => Date;
-  alexaSleep?: (ms: number) => Promise<void>;
-  alexaLogWaitMs?: number;
-  alexaTimeZone?: AlexaDeps["timeZone"];
-  alexaVerify?: (input: { body: string; signature: string | undefined; certUrl: string | undefined }) => Promise<boolean>;
 }
 
-export function createApp({
-  logger,
-  journal,
-  corrections,
-  env = process.env,
-  sync = createSyncHub(),
-  data,
-  login,
-  alexaNow,
-  alexaSleep,
-  alexaLogWaitMs,
-  alexaTimeZone,
-  alexaVerify,
-}: AppDeps): Hono {
+export function createApp({ logger, journal, corrections, env = process.env, sync = createSyncHub(), data }: AppDeps): Hono {
   const presentMeal = async (entry: FoodLogEntry): Promise<MealJson> => {
     const fit = corrections ? await corrections.current() : null;
     return serializeMeal(entry, fit);
@@ -83,7 +60,6 @@ export function createApp({
     });
   };
   const app = new Hono();
-  mountLogin(app, login, Boolean(login?.alexa));
 
   app.onError((error, c) => {
     console.error(error);
@@ -92,62 +68,6 @@ export function createApp({
   });
 
   app.get("/api/health", (c) => c.json({ ok: true }));
-
-  app.post("/api/alexa", async (c) => {
-    if (!login?.alexa) {
-      return c.json({ error: { message: "Alexa is not configured." } }, 404);
-    }
-    const raw = await c.req.text();
-    const verified = await (alexaVerify ?? verifyAlexaSignature)({
-      body: raw,
-      signature: c.req.header("signature"),
-      certUrl: c.req.header("signaturecertchainurl"),
-    });
-    if (!verified) {
-      return c.body(null, 400);
-    }
-    let body: unknown;
-    try {
-      body = JSON.parse(raw);
-    } catch {
-      return c.body(null, 400);
-    }
-    const alexa = login.alexa;
-    const result = await handleAlexa(body as Parameters<typeof handleAlexa>[0], {
-      skillId: alexa.skillId,
-      clientId: alexa.clientId,
-      store: login.store,
-      now: alexaNow?.(),
-      sleep: alexaSleep,
-      logWaitMs: alexaLogWaitMs,
-      timeZone: alexaTimeZone ?? ((request) => deviceTimeZone(request, login.fetchImpl)),
-      logMeal: async (query, eatenAt) => {
-        const entry = await logger.log(query, { eatenAt });
-        publish("food");
-        const meal = await presentMeal(entry);
-        return { description: meal.description, caloriesKcal: meal.adjusted?.caloriesKcal ?? meal.macros.caloriesKcal };
-      },
-      snapshot: async (from, to, today) => {
-        const [meals, fit] = await Promise.all([logger.list(from, to), corrections ? corrections.current() : Promise.resolve(null)]);
-        const totals = sumMacros(meals.map((meal) => serializeMeal(meal, fit).adjusted ?? meal.macros));
-        const range = energyWindow(today);
-        const observations = await journal.list(range.historyFrom, range.until);
-        const recommendation = recommendDay({
-          profile: readBodyProfile(env, today),
-          today,
-          intakes: meals.map((meal) => ({ eatenAt: meal.eatenAt, kcal: meal.macros.caloriesKcal })),
-          observations: observations.map((view) => ({
-            at: view.observation.at,
-            kindLabel: view.kind.label,
-            fields: view.kind.fields,
-            values: view.observation.values,
-          })),
-        });
-        return { ...totals, minKcal: recommendation.minKcal, maxKcal: recommendation.maxKcal };
-      },
-    });
-    return c.json(result.json, result.status);
-  });
 
   app.all("/mcp", (c) => {
     if (!data) {

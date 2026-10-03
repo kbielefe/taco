@@ -115,7 +115,6 @@ body::before {
 
 .views {
   display: flex;
-  flex-wrap: wrap;
   gap: 0.25rem;
 }
 
@@ -133,16 +132,6 @@ body::before {
 .views a:hover,
 .views a:focus-visible {
   color: var(--fg);
-}
-
-.views button {
-  margin-left: auto;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  text-decoration: underline;
 }
 
 .views a[aria-current="page"] {
