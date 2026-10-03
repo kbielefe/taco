@@ -4,8 +4,10 @@ import { collectionDescription } from "../mcp/schema.js";
 import { callTool, listTools } from "../mcp/tools.js";
 import { readAskReasoningEffort } from "../log/ai.js";
 import { DEFAULT_FOOD_LOG_MODEL } from "../log/types.js";
-import { CATALOG_ID, CATALOG_INSTRUCTIONS } from "./catalog.js";
+import { CATALOG_ID, CATALOG_INSTRUCTIONS, MAX_POINTS, MAX_SERIES } from "./catalog.js";
 import { AskConfigError, AskFailedError } from "./errors.js";
+import { PROMPT, PromptBook } from "../mlflow/prompts.js";
+import { withMlflowSpan, type TokenUsage } from "../mlflow/tracing.js";
 import type { AskTurn } from "./request.js";
 import { validateA2ui, type A2uiMessage } from "./validate.js";
 
@@ -18,7 +20,7 @@ export type AskEvent =
   | { type: "a2ui"; message: A2uiMessage };
 
 export interface AskModel {
-  create(request: { instructions: string; input: unknown[] }): Promise<{ output: unknown[] }>;
+  create(request: { instructions: string; input: unknown[] }): Promise<{ output: unknown[]; usage?: TokenUsage }>;
 }
 
 export interface RunAskOptions {
@@ -29,6 +31,7 @@ export interface RunAskOptions {
   data: DataCatalog;
   model: AskModel;
   emit: (event: AskEvent) => Promise<void>;
+  prompts?: PromptBook;
 }
 
 interface ToolCall {
@@ -94,13 +97,26 @@ export function createXaiAskModel(options: { env?: NodeJS.ProcessEnv; client?: O
         reasoning: { effort },
         store: false,
       });
-      return { output: [...response.output] };
+      const usage = responseUsage(response.usage);
+      return { output: [...response.output], ...(usage ? { usage } : {}) };
     },
   };
 }
 
+function responseUsage(usage: { input_tokens?: number; output_tokens?: number; total_tokens?: number } | undefined): TokenUsage | undefined {
+  if (!usage || usage.input_tokens === undefined || usage.output_tokens === undefined) {
+    return undefined;
+  }
+  return {
+    input_tokens: usage.input_tokens,
+    output_tokens: usage.output_tokens,
+    total_tokens: usage.total_tokens ?? usage.input_tokens + usage.output_tokens,
+  };
+}
+
 export async function runAsk(options: RunAskOptions): Promise<void> {
-  const instructions = buildInstructions(options.timeZone, options.today);
+  const prompts = options.prompts ?? new PromptBook();
+  const { text: instructions, links } = buildInstructions(prompts, options.timeZone, options.today);
   let input: unknown[] = [
     ...options.history.map((turn) => ({ role: turn.role, content: turn.content })),
     { role: "user" as const, content: options.question },
@@ -108,10 +124,35 @@ export async function runAsk(options: RunAskOptions): Promise<void> {
   let answer = "";
   let shown = false;
 
-  for (let round = 0; round < MAX_ROUNDS; round += 1) {
+  await withMlflowSpan(
+    {
+      name: "ask",
+      spanType: "AGENT",
+      inputs: { question: options.question, timeZone: options.timeZone, today: options.today },
+      links,
+    },
+    async () => {
+      for (let round = 0; round < MAX_ROUNDS; round += 1) {
+        if (await oneRound()) {
+          return { result: undefined, outputs: { answer, shown } };
+        }
+      }
+      await finish(options.emit, answer, shown);
+      return { result: undefined, outputs: { answer, shown } };
+    },
+  );
+
+  async function oneRound(): Promise<boolean> {
     let output: unknown[];
     try {
-      output = (await options.model.create({ instructions, input })).output;
+      const created = await withMlflowSpan(
+        { name: "ask model", spanType: "LLM", inputs: { instructions, input }, links },
+        async () => {
+          const response = await options.model.create({ instructions, input });
+          return { result: response, outputs: response.output, ...(response.usage ? { usage: response.usage } : {}) };
+        },
+      );
+      output = created.output;
     } catch (error) {
       if (error instanceof AskFailedError || error instanceof AskConfigError) {
         throw error;
@@ -128,7 +169,7 @@ export async function runAsk(options: RunAskOptions): Promise<void> {
     const calls = readCalls(output);
     if (calls.length === 0) {
       await finish(options.emit, answer, shown);
-      return;
+      return true;
     }
     const results: unknown[] = [];
     for (const call of calls) {
@@ -138,8 +179,8 @@ export async function runAsk(options: RunAskOptions): Promise<void> {
       results.push({ type: "function_call_output", call_id: call.callId, output: outputText });
     }
     input = [...output, ...results];
+    return false;
   }
-  await finish(options.emit, answer, shown);
 }
 
 async function finish(emit: RunAskOptions["emit"], answer: string, shown: boolean): Promise<void> {
@@ -204,21 +245,26 @@ async function emitMessages(messages: A2uiMessage[], emit: RunAskOptions["emit"]
   return "Shown.";
 }
 
-function buildInstructions(timeZone: string, today: string): string {
-  return [
-    "You answer questions about one person's private food log and journal in Taco.",
-    "Use the read tools before you state a number. Do not invent meals, weights, symptoms, or totals.",
-    "Answer with a chart whenever the data can be charted, even when the question does not ask for one.",
-    "Use as little text as possible. Do not restate the chart in sentences or a list.",
-    `The person's time zone is ${timeZone}. The local date is ${today}. Group calendar days in that time zone.`,
-    `food: ${collectionDescription("food")}`,
-    `observations: ${collectionDescription("observations")}`,
-    `kinds: ${collectionDescription("kinds")}`,
-    "When you talk about macros, say Protein, Fat, Carbohydrate, and Fiber.",
-    'Dates and ObjectIds in tool arguments use Extended JSON: {"$date":"<ISO-8601>"} and {"$oid":"<24 hex chars>"}.',
-    `The show tool uses catalog ${CATALOG_ID}.`,
-    CATALOG_INSTRUCTIONS,
-  ].join("\n");
+function buildInstructions(
+  prompts: PromptBook,
+  timeZone: string,
+  today: string,
+): { text: string; links: ReturnType<PromptBook["resolve"]>[] } {
+  const chart = prompts.resolve(PROMPT.chart, {
+    catalogId: CATALOG_ID,
+    maxSeries: String(MAX_SERIES),
+    maxPoints: String(MAX_POINTS),
+  });
+  const ask = prompts.resolve(PROMPT.ask, {
+    timeZone,
+    today,
+    food: collectionDescription("food"),
+    observations: collectionDescription("observations"),
+    kinds: collectionDescription("kinds"),
+    catalogId: CATALOG_ID,
+    chartInstructions: chart.text,
+  });
+  return { text: ask.text, links: [ask, chart] };
 }
 
 function statusFor(name: string, args: unknown): string | undefined {

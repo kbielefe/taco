@@ -61,6 +61,7 @@ services:
       MONGODB_URI: mongodb://${MONGO_CACHE_USERNAME}:${MONGO_CACHE_PASSWORD}@mongodb:27017/health?authSource=health
       USDA_API_KEY: ${USDA_API_KEY:?USDA_API_KEY is required}
       XAI_API_KEY: ${XAI_API_KEY:-}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
       BIRTH_YEAR: ${BIRTH_YEAR:-}
       SEX: ${SEX:-}
       HEIGHT_IN: ${HEIGHT_IN:-}
@@ -69,6 +70,8 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      mlflow:
+        condition: service_started
     healthcheck:
       test:
         [
@@ -78,6 +81,35 @@ services:
           "fetch('http://127.0.0.1:3001/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.16.0
+    container_name: health-tracker-mlflow
+    restart: unless-stopped
+    # Proxied artifacts so the web container uploads traces over HTTP.
+    # allowed-hosts includes the compose DNS name mlflow; the default list does not.
+    command:
+      [
+        "sh",
+        "-c",
+        "mkdir -p /mlflow/artifacts && exec mlflow server --host 0.0.0.0 --port 5000 --workers 1 --backend-store-uri sqlite:////mlflow/mlflow.db --artifacts-destination /mlflow/artifacts --allowed-hosts localhost,localhost:*,127.0.0.1,127.0.0.1:*,mlflow,mlflow:*,10.*,192.168.*,172.16.*,172.17.*,172.18.*,172.19.*,172.20.*,172.21.*,172.22.*,172.23.*,172.24.*,172.25.*,172.26.*,172.27.*,172.28.*,172.29.*,172.30.*,172.31.*",
+      ]
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - mlflow_data:/mlflow
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')",
+        ]
+      interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
@@ -95,3 +127,4 @@ services:
 
 volumes:
   mongodb_data:
+  mlflow_data:

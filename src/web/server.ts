@@ -5,18 +5,27 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { connectCorrectionRunner } from "../correct/run.js";
 import { createJournal } from "../journal/journal.js";
 import { createFoodLogger } from "../log/logger.js";
+import { PromptBook } from "../mlflow/prompts.js";
+import { startMlflow } from "../mlflow/start.js";
 import { mongoCatalog } from "../mcp/mongo.js";
 import { createApp } from "./routes.js";
 
 const port = Number(process.env.PORT ?? 3001);
 const hostname = process.env.HOST ?? "127.0.0.1";
 
-const logger = await createFoodLogger();
+const prompts = new PromptBook();
+const mlflow = startMlflow({ prompts });
+const logger = await createFoodLogger({ prompts }).catch(async (error: unknown) => {
+  await mlflow.shutdown();
+  throw error;
+});
 const journal = await createJournal().catch(async (error: unknown) => {
+  await mlflow.shutdown();
   await logger.close();
   throw error;
 });
 const corrections = await connectCorrectionRunner({ logger, journal }).catch(async (error: unknown) => {
+  await mlflow.shutdown();
   await logger.close();
   await journal.close();
   throw error;
@@ -26,9 +35,11 @@ const app = createApp({
   logger,
   journal,
   corrections,
+  prompts,
   ...(healthDb ? { data: mongoCatalog(healthDb) } : {}),
 });
 corrections.schedule();
+await mlflow.ready;
 
 const webDist = join(process.cwd(), "web/dist");
 if (existsSync(join(webDist, "index.html"))) {
@@ -50,6 +61,7 @@ const server = serve({ fetch: app.fetch, port, hostname }, (info) => {
 
 async function shutdown() {
   server.close();
+  await mlflow.shutdown();
   await corrections.close();
   await logger.close();
   await journal.close();

@@ -1,20 +1,28 @@
+import { formatPrompt } from "../mlflow/format.js";
+
 export const CATALOG_ID = "https://health.bielefeldt.dev/a2ui/taco/v1/catalog.json";
 
 export const MAX_SERIES = 4;
 export const MAX_POINTS = 60;
 export const MAX_COMPONENTS = 8;
 
-export const CATALOG_INSTRUCTIONS = `Show a chart with A2UI v0.9 messages for catalog ${CATALOG_ID}.
+export const CATALOG_INSTRUCTIONS_TEMPLATE = `Show a chart with A2UI v0.9 messages for catalog {{catalogId}}.
 Send createSurface, then updateComponents. One surface per answer. The root component id is root.
 Components are Column, Text, LineChart, and BarChart.
 Column has children, an array of component ids.
 Text has text and variant "title" or "body". Use plain text, not HTML.
 LineChart and BarChart have title, unit, and series. Use LineChart for a change over time and BarChart for separate categories.
-A series has name and points. A point has label and value. Use at most ${MAX_SERIES} series and ${MAX_POINTS} points in each series.
+A series has name and points. A point has label and value. Use at most {{maxSeries}} series and {{maxPoints}} points in each series.
 Name macro series Protein, Fat, Carbohydrate, and Fiber.
 Call show for any series, comparison, or change over time, even when the user did not ask for a chart.
 The chart is the answer. Add a Text body only for one short sentence the chart cannot show, and do not repeat its numbers.
 Skip show only for a single fact, a yes or no, or a non-numeric list, and then use one short sentence.`;
+
+export const CATALOG_INSTRUCTIONS = formatPrompt(CATALOG_INSTRUCTIONS_TEMPLATE, {
+  catalogId: CATALOG_ID,
+  maxSeries: String(MAX_SERIES),
+  maxPoints: String(MAX_POINTS),
+});
 
 const chartComponent = {
   type: "object",

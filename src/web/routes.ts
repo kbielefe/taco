@@ -14,6 +14,7 @@ import type { DataCatalog } from "../mcp/catalog.js";
 import { handleMcpRequest } from "../mcp/http.js";
 import { CATALOG } from "../ask/catalog.js";
 import { createXaiAskModel, runAsk, type AskModel } from "../ask/agent.js";
+import type { PromptBook } from "../mlflow/prompts.js";
 import { AskConfigError, AskFailedError } from "../ask/errors.js";
 import { parseAskRequest } from "../ask/request.js";
 import { createSyncHub, type SyncHub, type SyncTopic } from "./sync.js";
@@ -46,6 +47,7 @@ export interface AppDeps {
   data?: DataCatalog;
   /** Ask model. Tests inject this. The default calls xAI. */
   askModel?: AskModel;
+  prompts?: PromptBook;
 }
 
 export function createApp({
@@ -56,6 +58,7 @@ export function createApp({
   sync = createSyncHub(),
   data,
   askModel,
+  prompts,
 }: AppDeps): Hono {
   const presentMeal = async (entry: FoodLogEntry): Promise<MealJson> => {
     const fit = corrections ? await corrections.current() : null;
@@ -339,6 +342,7 @@ export function createApp({
           history: request.history,
           data,
           model,
+          ...(prompts ? { prompts } : {}),
           emit: async (event) => {
             await out.writeln(JSON.stringify(event));
           },

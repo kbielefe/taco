@@ -2,6 +2,7 @@ import { MongoClient, type Db } from "mongodb";
 import { MongoCacheStore, type CacheStore } from "../fdc/cache.js";
 import { FdcClient } from "../fdc/client.js";
 import type { FoodItem, SearchFoodsOptions, SearchResultFood } from "../fdc/types.js";
+import type { PromptBook } from "../mlflow/prompts.js";
 import { XaiFoodLogAi } from "./ai.js";
 import { FoodLogAiError, FoodLogConfigError, FoodLogMatchError } from "./errors.js";
 import { candidateIds, clampGrams, compactSearchCandidate, fusedSearchFoods } from "./match.js";
@@ -60,6 +61,7 @@ export interface CreateFoodLoggerOptions {
   usdaApiKey?: string;
   model?: string;
   fdcCache?: CacheStore;
+  prompts?: PromptBook;
 }
 
 export class FoodLogger {
@@ -303,6 +305,7 @@ export async function createFoodLogger(options: CreateFoodLoggerOptions = {}): P
     new XaiFoodLogAi({
       apiKey: options.xaiApiKey,
       model: options.model,
+      ...(options.prompts ? { prompts: options.prompts } : {}),
     });
 
   let fdc = options.fdc;

@@ -1,9 +1,11 @@
 import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
 import type { z } from "zod";
+import { PROMPT, PromptBook } from "../mlflow/prompts.js";
+import { withMlflowSpan, type TokenUsage } from "../mlflow/tracing.js";
 import { FoodLogAiError, FoodLogConfigError } from "./errors.js";
-import { MATCH_SYSTEM_PROMPT, SelectedMatchSchema, buildMatchUserPrompt } from "./match.js";
-import { PARSE_SYSTEM_PROMPT, ParsedMealSchema, normalizeParsedMeal } from "./parse.js";
+import { SelectedMatchSchema, buildMatchUserPrompt } from "./match.js";
+import { ParsedMealSchema, normalizeParsedMeal } from "./parse.js";
 import { DEFAULT_FOOD_LOG_MODEL, type FoodLogAi, type ParsedMeal, type SelectMatchInput, type SelectedMatch } from "./types.js";
 
 const DEFAULT_XAI_BASE_URL = "https://api.x.ai/v1";
@@ -19,6 +21,7 @@ export interface XaiFoodLogAiOptions {
   baseURL?: string;
   reasoningEffort?: string;
   client?: OpenAI;
+  prompts?: PromptBook;
 }
 
 export function readReasoningEffort(explicit?: string): XaiReasoningEffort {
@@ -60,6 +63,7 @@ export class XaiFoodLogAi implements FoodLogAi {
   private readonly baseURL: string;
   private readonly model: string;
   private readonly reasoningEffort: XaiReasoningEffort;
+  private readonly prompts: PromptBook;
 
   constructor(options: XaiFoodLogAiOptions = {}) {
     this.client = options.client;
@@ -67,6 +71,7 @@ export class XaiFoodLogAi implements FoodLogAi {
     this.baseURL = options.baseURL ?? DEFAULT_XAI_BASE_URL;
     this.model = options.model ?? DEFAULT_FOOD_LOG_MODEL;
     this.reasoningEffort = readReasoningEffort(options.reasoningEffort);
+    this.prompts = options.prompts ?? new PromptBook();
   }
 
   private getClient(): OpenAI {
@@ -84,35 +89,58 @@ export class XaiFoodLogAi implements FoodLogAi {
   }
 
   async parseQuery(query: string): Promise<ParsedMeal> {
-    const parsed = await this.parse(ParsedMealSchema, "parsed_meal", PARSE_SYSTEM_PROMPT, query);
-    return normalizeParsedMeal(parsed);
+    const prompt = this.prompts.resolve(PROMPT.parse);
+    return withMlflowSpan(
+      {
+        name: "parse meal",
+        spanType: "LLM",
+        inputs: { messages: messages(prompt.text, query) },
+        links: [prompt],
+      },
+      async () => {
+        const parsed = await this.complete(ParsedMealSchema, "parsed_meal", prompt.text, query);
+        const meal = normalizeParsedMeal(parsed.value);
+        return { result: meal, outputs: meal, ...(parsed.usage ? { usage: parsed.usage } : {}) };
+      },
+    );
   }
 
   async selectMatch(input: SelectMatchInput): Promise<SelectedMatch> {
-    return this.parse(SelectedMatchSchema, "selected_match", MATCH_SYSTEM_PROMPT, buildMatchUserPrompt(input));
+    const prompt = this.prompts.resolve(PROMPT.match);
+    const user = buildMatchUserPrompt(input);
+    return withMlflowSpan(
+      {
+        name: "select match",
+        spanType: "LLM",
+        inputs: { messages: messages(prompt.text, user) },
+        links: [prompt],
+      },
+      async () => {
+        const parsed = await this.complete(SelectedMatchSchema, "selected_match", prompt.text, user);
+        return { result: parsed.value, outputs: parsed.value, ...(parsed.usage ? { usage: parsed.usage } : {}) };
+      },
+    );
   }
 
-  private async parse<S extends z.ZodType>(
+  private async complete<S extends z.ZodType>(
     schema: S,
     name: string,
     system: string,
     user: string,
-  ): Promise<z.output<S>> {
+  ): Promise<{ value: z.output<S>; usage?: TokenUsage }> {
     try {
       const completion = await this.getClient().chat.completions.parse({
         model: this.model,
         reasoning_effort: this.reasoningEffort,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
+        messages: messages(system, user),
         response_format: zodResponseFormat(schema, name),
       });
       const parsed = completion.choices[0]?.message.parsed;
       if (parsed === null || parsed === undefined) {
         throw new FoodLogAiError("Model returned no structured output");
       }
-      return schema.parse(parsed);
+      const usage = chatUsage(completion.usage);
+      return { value: schema.parse(parsed), ...(usage ? { usage } : {}) };
     } catch (error) {
       if (error instanceof FoodLogAiError || error instanceof FoodLogConfigError) {
         throw error;
@@ -120,4 +148,22 @@ export class XaiFoodLogAi implements FoodLogAi {
       throw new FoodLogAiError("Food log AI request failed", { cause: error });
     }
   }
+}
+
+function messages(system: string, user: string): Array<{ role: "system" | "user"; content: string }> {
+  return [
+    { role: "system", content: system },
+    { role: "user", content: user },
+  ];
+}
+
+function chatUsage(usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null | undefined): TokenUsage | undefined {
+  if (!usage || usage.prompt_tokens === undefined || usage.completion_tokens === undefined) {
+    return undefined;
+  }
+  return {
+    input_tokens: usage.prompt_tokens,
+    output_tokens: usage.completion_tokens,
+    total_tokens: usage.total_tokens ?? usage.prompt_tokens + usage.completion_tokens,
+  };
 }
