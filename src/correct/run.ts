@@ -1,4 +1,5 @@
 import { observationWeightKg, type WeightObservation } from "../energy/recommend.js";
+import { withMlflowSpan } from "../mlflow/tracing.js";
 import { readBodyProfile } from "../energy/profile.js";
 import type { Journal } from "../journal/journal.js";
 import type { FoodLogger } from "../log/logger.js";
@@ -65,23 +66,29 @@ export function createCorrectionRunner(options: CorrectionRunnerOptions): Correc
   };
 
   const run = async (requested: string | undefined): Promise<void> => {
-    const existing = await options.store.read();
-    const profile = readBodyProfile(env, new Date());
-    if (!profile.ok) {
-      report(profile.message);
-      return;
-    }
-    const timeZone = chooseTimeZone(requested, existing?.timeZone);
-    const history = await options.load();
-    const windows = buildEnergyWindows({
-      profile: profile.profile,
-      meals: history.meals,
-      observations: history.observations,
-      timeZone,
-    });
-    const fit = fitEnergyWindows(windows);
-    const stored: StoredCorrection = { updatedAt: new Date(), timeZone, fit };
-    await options.store.save(stored);
+    await withMlflowSpan(
+      { name: "fit corrections", spanType: "CHAIN", inputs: { timeZone: requested }, root: true },
+      async () => {
+        const existing = await options.store.read();
+        const profile = readBodyProfile(env, new Date());
+        if (!profile.ok) {
+          report(profile.message);
+          return { result: undefined, outputs: { skipped: profile.message } };
+        }
+        const timeZone = chooseTimeZone(requested, existing?.timeZone);
+        const history = await options.load();
+        const windows = buildEnergyWindows({
+          profile: profile.profile,
+          meals: history.meals,
+          observations: history.observations,
+          timeZone,
+        });
+        const fit = fitEnergyWindows(windows);
+        const stored: StoredCorrection = { updatedAt: new Date(), timeZone, fit };
+        await options.store.save(stored);
+        return { result: undefined, outputs: { timeZone, windows: windows.length } };
+      },
+    );
   };
 
   return {

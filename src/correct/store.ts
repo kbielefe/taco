@@ -1,5 +1,6 @@
 import { MongoClient, type Collection, type Db } from "mongodb";
 import { HEALTH_DB } from "../log/types.js";
+import { withToolSpan } from "../mlflow/tracing.js";
 import type { CorrectionFit } from "./fit.js";
 
 export const CORRECTIONS_COLLECTION = "corrections";
@@ -40,18 +41,32 @@ export class MongoCorrectionStore implements CorrectionStore {
   }
 
   async read(): Promise<StoredCorrection | null> {
-    const found = await this.collection.findOne({ _id: CURRENT_ID });
-    if (!found) {
-      return null;
-    }
-    return { updatedAt: found.updatedAt, timeZone: found.timeZone, fit: found.fit };
+    return withToolSpan(
+      "mongo corrections.read",
+      { collection: this.collection.collectionName, id: CURRENT_ID },
+      async () => {
+        const found = await this.collection.findOne({ _id: CURRENT_ID });
+        if (!found) {
+          return null;
+        }
+        return { updatedAt: found.updatedAt, timeZone: found.timeZone, fit: found.fit };
+      },
+      (found) => ({ found: found !== null }),
+    );
   }
 
   async save(document: StoredCorrection): Promise<void> {
-    await this.collection.updateOne(
-      { _id: CURRENT_ID },
-      { $set: { updatedAt: document.updatedAt, timeZone: document.timeZone, fit: document.fit } },
-      { upsert: true },
+    return withToolSpan(
+      "mongo corrections.save",
+      { collection: this.collection.collectionName, id: CURRENT_ID, timeZone: document.timeZone },
+      async () => {
+        await this.collection.updateOne(
+          { _id: CURRENT_ID },
+          { $set: { updatedAt: document.updatedAt, timeZone: document.timeZone, fit: document.fit } },
+          { upsert: true },
+        );
+      },
+      () => ({ stored: true }),
     );
   }
 }

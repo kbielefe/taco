@@ -7,7 +7,7 @@ import { DEFAULT_FOOD_LOG_MODEL } from "../log/types.js";
 import { CATALOG_ID, CATALOG_INSTRUCTIONS, MAX_POINTS, MAX_SERIES } from "./catalog.js";
 import { AskConfigError, AskFailedError } from "./errors.js";
 import { PROMPT, PromptBook } from "../mlflow/prompts.js";
-import { withMlflowSpan, type TokenUsage } from "../mlflow/tracing.js";
+import { withMlflowSpan, withToolSpan, type TokenUsage } from "../mlflow/tracing.js";
 import type { AskTurn } from "./request.js";
 import { validateA2ui, type A2uiMessage } from "./validate.js";
 
@@ -204,17 +204,29 @@ async function runCall(
   } catch {
     return "The tool arguments were not valid JSON.";
   }
-  if (call.name === "show") {
+  return withToolSpan(call.name, args, () => executeCall(call.name, args, options, alreadyShown, onShown), (text) =>
+    text.slice(0, 1_000),
+  );
+}
+
+async function executeCall(
+  name: string,
+  args: unknown,
+  options: RunAskOptions,
+  alreadyShown: boolean,
+  onShown: () => void,
+): Promise<string> {
+  if (name === "show") {
     return showSurface(args, options.emit, alreadyShown, onShown);
   }
-  const status = statusFor(call.name, args);
+  const status = statusFor(name, args);
   if (status) {
     await options.emit({ type: "status", message: status });
   }
-  if (!DATA_TOOLS.has(call.name)) {
-    return `Unknown tool ${call.name}.`;
+  if (!DATA_TOOLS.has(name)) {
+    return `Unknown tool ${name}.`;
   }
-  const result = await callTool(call.name, args, options.data);
+  const result = await callTool(name, args, options.data);
   return result.content[0].text;
 }
 

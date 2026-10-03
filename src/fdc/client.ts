@@ -22,6 +22,7 @@ import {
   searchCacheKey,
   type CacheStore,
 } from "./cache.js";
+import { withMlflowSpan } from "../mlflow/tracing.js";
 import { HourlyRateLimiter, hourlyLimitForKey, parseRetryAfterMs } from "./rate-limit.js";
 import type {
   AbridgedFoodItem,
@@ -101,119 +102,131 @@ export class FdcClient {
   }
 
   async getFood(fdcId: number | string, options: GetFoodOptions = {}): Promise<FoodItem> {
-    validateNutrients(options.nutrients);
     const format = options.format ?? "full";
-    const key = foodCacheKey(fdcId, format, options.nutrients);
-    const path = `/v1/food/${encodeURIComponent(String(fdcId))}`;
-    return this.cachedRequest<FoodItem>({
-      cacheKey: key,
-      ttlMs: FOOD_CACHE_TTL_MS,
-      skipCache: options.skipCache,
-      cacheNotFound: true,
-      method: "GET",
-      path,
-      query: {
-        format,
-        nutrients: options.nutrients,
+    return withMlflowSpan(
+      { name: "fdc get", spanType: "RETRIEVER", inputs: fdcFoodInputs(fdcId, format, options.nutrients) },
+      async () => {
+        validateNutrients(options.nutrients);
+        const loaded = await this.cachedRequest<FoodItem>({
+          cacheKey: foodCacheKey(fdcId, format, options.nutrients),
+          ttlMs: FOOD_CACHE_TTL_MS,
+          skipCache: options.skipCache,
+          cacheNotFound: true,
+          method: "GET",
+          path: `/v1/food/${encodeURIComponent(String(fdcId))}`,
+          query: { format, nutrients: options.nutrients },
+        });
+        return { result: loaded.value, outputs: { cache: loaded.cache, ...summarizeFood(loaded.value) } };
       },
-    });
+    );
   }
 
   async getFoods(fdcIds: Array<number | string>, options: GetFoodsOptions = {}): Promise<FoodItem[]> {
-    if (fdcIds.length === 0) {
-      throw new FdcBadRequestError("fdcIds must contain at least one id");
-    }
-    validateNutrients(options.nutrients);
     const format = options.format ?? "full";
-    const uniqueIds = [...new Set(fdcIds.map(String))];
-
-    const foods: FoodItem[] = [];
-    const missing: string[] = [];
-
-    if (!options.skipCache) {
-      for (const id of uniqueIds) {
-        const cached = await this.cache.get<FoodItem | typeof NOT_FOUND_SENTINEL>(
-          foodCacheKey(id, format, options.nutrients),
-        );
-        if (cached === undefined) {
-          missing.push(id);
-        } else if (!isNotFoundSentinel(cached)) {
-          foods.push(cached);
+    return withMlflowSpan(
+      { name: "fdc get foods", spanType: "RETRIEVER", inputs: { fdcIds, format, nutrients: options.nutrients } },
+      async () => {
+        if (fdcIds.length === 0) {
+          throw new FdcBadRequestError("fdcIds must contain at least one id");
         }
-      }
-    } else {
-      missing.push(...uniqueIds);
-    }
+        validateNutrients(options.nutrients);
+        const uniqueIds = [...new Set(fdcIds.map(String))];
+        const foods: FoodItem[] = [];
+        const missing: string[] = [];
 
-    for (let i = 0; i < missing.length; i += MAX_FDC_IDS_PER_REQUEST) {
-      const batch = missing.slice(i, i + MAX_FDC_IDS_PER_REQUEST).map(Number);
-      const fetched = await this.request<FoodItem[]>({
-        method: "POST",
-        path: "/v1/foods",
-        body: {
-          fdcIds: batch,
-          format,
-          ...(options.nutrients && options.nutrients.length > 0 ? { nutrients: options.nutrients } : {}),
-        },
-      });
-      if (!Array.isArray(fetched)) {
-        throw new FdcResponseError("USDA FDC /foods did not return an array");
-      }
-      const returned = new Set(fetched.map((food) => String(food.fdcId)));
-      for (const food of fetched) {
-        foods.push(food);
-        await this.cache.set(
-          foodCacheKey(food.fdcId, format, options.nutrients),
-          food,
-          FOOD_CACHE_TTL_MS,
-        );
-      }
-      for (const id of batch) {
-        if (!returned.has(String(id))) {
-          await this.cache.set(
-            foodCacheKey(id, format, options.nutrients),
-            NOT_FOUND_SENTINEL,
-            NOT_FOUND_CACHE_TTL_MS,
-            404,
-          );
+        if (!options.skipCache) {
+          for (const id of uniqueIds) {
+            const cached = await this.cache.get<FoodItem | typeof NOT_FOUND_SENTINEL>(
+              foodCacheKey(id, format, options.nutrients),
+            );
+            if (cached === undefined) {
+              missing.push(id);
+            } else if (!isNotFoundSentinel(cached)) {
+              foods.push(cached);
+            }
+          }
+        } else {
+          missing.push(...uniqueIds);
         }
-      }
-    }
 
-    const byId = new Map(foods.map((food) => [String(food.fdcId), food]));
-    return uniqueIds.flatMap((id) => {
-      const food = byId.get(id);
-      return food ? [food] : [];
-    });
+        for (let i = 0; i < missing.length; i += MAX_FDC_IDS_PER_REQUEST) {
+          const batch = missing.slice(i, i + MAX_FDC_IDS_PER_REQUEST).map(Number);
+          const fetched = await this.request<FoodItem[]>({
+            method: "POST",
+            path: "/v1/foods",
+            body: {
+              fdcIds: batch,
+              format,
+              ...(options.nutrients && options.nutrients.length > 0 ? { nutrients: options.nutrients } : {}),
+            },
+          });
+          if (!Array.isArray(fetched)) {
+            throw new FdcResponseError("USDA FDC /foods did not return an array");
+          }
+          const returned = new Set(fetched.map((food) => String(food.fdcId)));
+          for (const food of fetched) {
+            foods.push(food);
+            await this.cache.set(foodCacheKey(food.fdcId, format, options.nutrients), food, FOOD_CACHE_TTL_MS);
+          }
+          for (const id of batch) {
+            if (!returned.has(String(id))) {
+              await this.cache.set(foodCacheKey(id, format, options.nutrients), NOT_FOUND_SENTINEL, NOT_FOUND_CACHE_TTL_MS, 404);
+            }
+          }
+        }
+
+        const byId = new Map(foods.map((food) => [String(food.fdcId), food]));
+        const ordered = uniqueIds.flatMap((id) => {
+          const food = byId.get(id);
+          return food ? [food] : [];
+        });
+        return {
+          result: ordered,
+          outputs: { cache: missing.length === 0 ? "hit" : "miss", foods: ordered.map(summarizeFood) },
+        };
+      },
+    );
   }
 
   async listFoods(options: ListFoodsOptions = {}): Promise<AbridgedFoodItem[]> {
-    validatePaging(options);
-    const criteria = listCriteria(options);
-    return this.cachedRequest<AbridgedFoodItem[]>({
-      cacheKey: listCacheKey(criteria),
-      ttlMs: SEARCH_CACHE_TTL_MS,
-      skipCache: options.skipCache,
-      method: "POST",
-      path: "/v1/foods/list",
-      body: criteria,
+    return withMlflowSpan({ name: "fdc list", spanType: "RETRIEVER", inputs: listCriteria(options) }, async () => {
+      validatePaging(options);
+      const criteria = listCriteria(options);
+      const loaded = await this.cachedRequest<AbridgedFoodItem[]>({
+        cacheKey: listCacheKey(criteria),
+        ttlMs: SEARCH_CACHE_TTL_MS,
+        skipCache: options.skipCache,
+        method: "POST",
+        path: "/v1/foods/list",
+        body: criteria,
+      });
+      return {
+        result: loaded.value,
+        outputs: { cache: loaded.cache, foods: loaded.value.map(summarizeFood) },
+      };
     });
   }
 
   async searchFoods(options: SearchFoodsOptions): Promise<SearchResult> {
-    if (!options.query || options.query.trim() === "") {
-      throw new FdcBadRequestError("search query is required");
-    }
-    validatePaging(options);
-    const criteria = searchCriteria(options);
-    return this.cachedRequest<SearchResult>({
-      cacheKey: searchCacheKey(criteria),
-      ttlMs: SEARCH_CACHE_TTL_MS,
-      skipCache: options.skipCache,
-      method: "POST",
-      path: "/v1/foods/search",
-      body: criteria,
-    });
+    return withMlflowSpan(
+      { name: "fdc search", spanType: "RETRIEVER", inputs: fdcSearchInputs(options) },
+      async () => {
+        if (!options.query || options.query.trim() === "") {
+          throw new FdcBadRequestError("search query is required");
+        }
+        validatePaging(options);
+        const criteria = searchCriteria(options);
+        const loaded = await this.cachedRequest<SearchResult>({
+          cacheKey: searchCacheKey(criteria),
+          ttlMs: SEARCH_CACHE_TTL_MS,
+          skipCache: options.skipCache,
+          method: "POST",
+          path: "/v1/foods/search",
+          body: criteria,
+        });
+        return { result: loaded.value, outputs: { cache: loaded.cache, ...summarizeSearch(loaded.value) } };
+      },
+    );
   }
 
   private async cachedRequest<T>(opts: {
@@ -225,20 +238,20 @@ export class FdcClient {
     path: string;
     query?: QueryParams;
     body?: unknown;
-  }): Promise<T> {
+  }): Promise<{ value: T; cache: "hit" | "miss" | "inflight" }> {
     if (!opts.skipCache) {
       const cached = await this.cache.get<T>(opts.cacheKey);
       if (cached !== undefined) {
         if (isNotFoundSentinel(cached)) {
           throw new FdcNotFoundError("Food not found", { status: 404 });
         }
-        return cached;
+        return { value: cached, cache: "hit" };
       }
     }
 
     const existing = this.inflight.get(opts.cacheKey);
     if (existing) {
-      return existing as Promise<T>;
+      return { value: (await existing) as T, cache: "inflight" };
     }
 
     const pending = this.request<T>({
@@ -262,10 +275,25 @@ export class FdcClient {
       });
 
     this.inflight.set(opts.cacheKey, pending);
-    return pending;
+    return { value: await pending, cache: "miss" };
   }
 
   private async request<T>(opts: {
+    method: "GET" | "POST";
+    path: string;
+    query?: QueryParams;
+    body?: unknown;
+  }): Promise<T> {
+    return withMlflowSpan(
+      { name: `fdc ${opts.method} ${opts.path}`, spanType: "TOOL", inputs: fdcHttpInputs(opts) },
+      async () => {
+        const value = await this.requestAttempts<T>(opts);
+        return { result: value, outputs: { ok: true } };
+      },
+    );
+  }
+
+  private async requestAttempts<T>(opts: {
     method: "GET" | "POST";
     path: string;
     query?: QueryParams;
@@ -398,6 +426,64 @@ function listCriteria(options: ListFoodsOptions): FoodListCriteria {
     sortBy: options.sortBy,
     sortOrder: options.sortOrder,
   });
+}
+
+export function fdcSearchInputs(options: SearchFoodsOptions): Record<string, unknown> {
+  return omitUndefined({
+    query: options.query,
+    dataType: options.dataType,
+    brandOwner: options.brandOwner,
+    pageSize: options.pageSize,
+    pageNumber: options.pageNumber,
+  });
+}
+
+export function fdcFoodInputs(fdcId: number | string, format: string, nutrients?: number[]): Record<string, unknown> {
+  return omitUndefined({ fdcId, format, nutrients });
+}
+
+export function fdcHttpInputs(opts: { method: string; path: string; query?: QueryParams; body?: unknown }): Record<string, unknown> {
+  return omitUndefined({
+    method: opts.method,
+    path: opts.path,
+    query: opts.query ? redactFdcQuery(opts.query) : undefined,
+    body: opts.body,
+  });
+}
+
+export function summarizeSearch(result: SearchResult): {
+  totalHits?: number;
+  foods: Array<{ fdcId: number; description: string; dataType?: string; score?: number }>;
+} {
+  return {
+    ...(result.totalHits !== undefined ? { totalHits: result.totalHits } : {}),
+    foods: (result.foods ?? []).map((food) => ({
+      fdcId: food.fdcId,
+      description: food.description,
+      ...(food.dataType ? { dataType: food.dataType } : {}),
+      ...(food.score !== undefined ? { score: food.score } : {}),
+    })),
+  };
+}
+
+export function summarizeFood(food: { fdcId: number; description: string; dataType?: string }): {
+  fdcId: number;
+  description: string;
+  dataType?: string;
+} {
+  return {
+    fdcId: food.fdcId,
+    description: food.description,
+    ...(food.dataType ? { dataType: food.dataType } : {}),
+  };
+}
+
+function redactFdcQuery(query: QueryParams): QueryParams {
+  const out: QueryParams = {};
+  for (const [key, value] of Object.entries(query)) {
+    out[key] = /api[_-]?key/i.test(key) ? "REDACTED" : value;
+  }
+  return out;
 }
 
 function searchCriteria(options: SearchFoodsOptions): FoodSearchCriteria {

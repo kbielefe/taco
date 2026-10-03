@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Collection, Db, Filter } from "mongodb";
+import { withToolSpan } from "../mlflow/tracing.js";
 
 export const FDC_CACHE_SOURCE = "usda-fdc";
 
@@ -102,32 +103,58 @@ export class MongoCacheStore implements CacheStore {
   }
 
   async get<T>(key: string): Promise<T | undefined> {
-    const doc = await this.collection.findOne({
-      _id: key,
-      source: this.source,
-      expiresAt: { $gt: new Date() },
-    });
-    if (!doc) {
-      return undefined;
-    }
-    return doc.value as T;
+    return withToolSpan(
+      "mongo cache.get",
+      { collection: this.collection.collectionName, source: this.source, key },
+      async () => {
+        const doc = await this.collection.findOne({
+          _id: key,
+          source: this.source,
+          expiresAt: { $gt: new Date() },
+        });
+        return doc ? (doc.value as T) : undefined;
+      },
+      (value) => ({ hit: value !== undefined }),
+    );
   }
 
   async set(key: string, value: unknown, ttlMs: number, status = 200): Promise<void> {
-    const now = new Date();
-    const doc: FdcCacheDocument = {
-      _id: key,
-      source: this.source,
-      status,
-      value,
-      createdAt: now,
-      expiresAt: new Date(now.getTime() + ttlMs),
-    };
-    await this.collection.replaceOne({ _id: key }, doc, { upsert: true });
+    return withToolSpan(
+      "mongo cache.set",
+      { collection: this.collection.collectionName, source: this.source, key, status },
+      async () => {
+        const now = new Date();
+        const doc: FdcCacheDocument = {
+          _id: key,
+          source: this.source,
+          status,
+          value,
+          createdAt: now,
+          expiresAt: new Date(now.getTime() + ttlMs),
+        };
+        await this.collection.replaceOne({ _id: key }, doc, { upsert: true });
+      },
+      () => ({ stored: true }),
+    );
   }
 
   async listRecent(options: CacheListOptions = {}): Promise<CacheListEntry[]> {
     const limit = options.limit ?? 8;
+    return withToolSpan(
+      "mongo cache.list",
+      {
+        collection: this.collection.collectionName,
+        source: this.source,
+        keyPrefix: options.keyPrefix,
+        queryPrefix: options.queryPrefix,
+        limit,
+      },
+      () => this.listRecentDocuments(options, limit),
+      (entries) => ({ count: entries.length }),
+    );
+  }
+
+  private async listRecentDocuments(options: CacheListOptions, limit: number): Promise<CacheListEntry[]> {
     const filter: Record<string, unknown> = {
       source: this.source,
       expiresAt: { $gt: new Date() },

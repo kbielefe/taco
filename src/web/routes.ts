@@ -18,6 +18,7 @@ import type { PromptBook } from "../mlflow/prompts.js";
 import { AskConfigError, AskFailedError } from "../ask/errors.js";
 import { parseAskRequest } from "../ask/request.js";
 import { createSyncHub, type SyncHub, type SyncTopic } from "./sync.js";
+import { traceRequest } from "./trace.js";
 
 const SYNC_PING_MS = 25_000;
 
@@ -77,6 +78,7 @@ export function createApp({
     });
   };
   const app = new Hono();
+  app.use("*", traceRequest);
 
   app.onError((error, c) => {
     console.error(error);
