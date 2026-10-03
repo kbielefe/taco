@@ -1,0 +1,39 @@
+{
+  "manifest": {
+    "manifestVersion": "1.0",
+    "publishingInformation": {
+      "locales": {
+        "en-US": {
+          "name": "Taco",
+          "summary": "Log food and hear today's calories.",
+          "description": "Tell Taco what you ate. Ask how many calories you have had today and what is left.",
+          "examplePhrases": [
+            "Alexa, tell Taco I ate a banana",
+            "Alexa, ask Taco how many calories I've had today",
+            "Alexa, ask Taco what I have left"
+          ],
+          "keywords": ["food", "calories", "taco"]
+        }
+      },
+      "isAvailableWorldwide": false,
+      "testingInstructions": "Link the skill with the code shown on the Taco website after signing in with Google.",
+      "category": "HEALTH_AND_FITNESS",
+      "distributionCountries": ["US"]
+    },
+    "apis": {
+      "custom": {
+        "endpoint": {
+          "uri": "https://health.bielefeldt.dev/api/alexa"
+        }
+      }
+    },
+    "permissions": [],
+    "privacyAndCompliance": {
+      "allowsPurchases": false,
+      "usesPersonalInfo": true,
+      "isChildDirected": false,
+      "isExportCompliant": true,
+      "containsAds": false
+    }
+  }
+}

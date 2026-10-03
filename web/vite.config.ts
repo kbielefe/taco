@@ -16,6 +16,8 @@ export default defineConfig({
         timeout: 60_000,
         proxyTimeout: 60_000,
       },
+      "/login": { target: process.env.VITE_API_PROXY ?? "http://127.0.0.1:3001" },
+      "/oauth": { target: process.env.VITE_API_PROXY ?? "http://127.0.0.1:3001" },
     },
   },
   build: {

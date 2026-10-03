@@ -124,11 +124,38 @@ try {
   });
 }
 
+try {
+  health.createRole({
+    role: "oauth",
+    privileges: [
+      {
+        resource: { db: "health", collection: "oauth" },
+        actions: ["find", "insert", "update", "remove", "createIndex", "listIndexes"],
+      },
+    ],
+    roles: [],
+  });
+} catch (error) {
+  if (error.codeName !== "DuplicateKey" && !/already exists/i.test(String(error.message))) {
+    throw error;
+  }
+  health.updateRole("oauth", {
+    privileges: [
+      {
+        resource: { db: "health", collection: "oauth" },
+        actions: ["find", "insert", "update", "remove", "createIndex", "listIndexes"],
+      },
+    ],
+    roles: [],
+  });
+}
+
 const appRoles = [
   { role: "cacheOnly", db: "health" },
   { role: "foodLog", db: "health" },
   { role: "journal", db: "health" },
   { role: "corrections", db: "health" },
+  { role: "oauth", db: "health" },
 ];
 
 const existingUsers = health.getUsers().users ?? [];

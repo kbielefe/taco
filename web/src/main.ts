@@ -382,4 +382,38 @@ if (location.pathname !== "/" && location.pathname !== "/journal") {
   history.replaceState({}, "", "/");
 }
 show(viewFromPath(location.pathname));
-void load();
+void start();
+
+async function start(): Promise<void> {
+  const response = await fetch("/api/session");
+  if (response.status === 401) {
+    location.assign("/login");
+    return;
+  }
+  if (response.ok) {
+    const session = (await response.json()) as { alexa?: boolean };
+    if (session.alexa) {
+      const button = required(document.querySelector<HTMLButtonElement>("#alexa-button"), "alexa-button");
+      const code = required(document.querySelector<HTMLParagraphElement>("#alexa-code"), "alexa-code");
+      button.hidden = false;
+      button.addEventListener("click", () => {
+        void fetch("/api/alexa/link-code")
+          .then(async (link) => {
+            if (!link.ok) {
+              code.textContent = "Couldn't make an Alexa code.";
+              code.hidden = false;
+              return;
+            }
+            const body = (await link.json()) as { code: string };
+            code.textContent = `Alexa code: ${body.code}`;
+            code.hidden = false;
+          })
+          .catch(() => {
+            code.textContent = "Couldn't make an Alexa code.";
+            code.hidden = false;
+          });
+      });
+    }
+  }
+  void load();
+}

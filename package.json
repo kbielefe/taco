@@ -22,7 +22,8 @@
     "start": "node --env-file=.env dist/web/server.js",
     "mongo:grant-food-delete": "node --env-file=.env --import tsx scripts/grant-food-delete.ts",
     "mongo:grant-journal": "node --env-file=.env --import tsx scripts/grant-journal.ts",
-    "mongo:grant-corrections": "node --env-file=.env --import tsx scripts/grant-corrections.ts"
+    "mongo:grant-corrections": "node --env-file=.env --import tsx scripts/grant-corrections.ts",
+    "mongo:grant-oauth": "node --env-file=.env --import tsx scripts/grant-oauth.ts"
   },
   "engines": {
     "node": ">=20"

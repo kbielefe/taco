@@ -1,0 +1,58 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "taco",
+      "intents": [
+        {
+          "name": "LogMealIntent",
+          "slots": [
+            {
+              "name": "food",
+              "type": "AMAZON.SearchQuery"
+            }
+          ],
+          "samples": [
+            "i ate {food}",
+            "log {food}",
+            "add {food}",
+            "i had {food}",
+            "for {food}"
+          ]
+        },
+        {
+          "name": "GetTodayIntent",
+          "slots": [],
+          "samples": [
+            "how many calories have i had today",
+            "how today is going",
+            "what do i have left",
+            "what's left",
+            "how many calories are left",
+            "today's calories"
+          ]
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.FallbackIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.NavigateHomeIntent",
+          "samples": []
+        }
+      ],
+      "types": []
+    }
+  }
+}
