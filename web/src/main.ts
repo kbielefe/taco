@@ -8,6 +8,7 @@ import {
   type Macros,
   type Meal,
 } from "./api.js";
+import { mountAsk } from "./ask.js";
 import { mountCombobox } from "./combobox.js";
 import { mountJournal } from "./journal.js";
 import { emptyMacros, formatGrams, formatKcal, sumMacros } from "./macros.js";
@@ -25,6 +26,7 @@ function required<T extends Element>(value: T | null, name: string): T {
 
 const viewFood = required(document.querySelector<HTMLElement>("#view-food"), "view-food");
 const viewJournal = required(document.querySelector<HTMLElement>("#view-journal"), "view-journal");
+const viewAsk = required(document.querySelector<HTMLElement>("#view-ask"), "view-ask");
 const viewLinks = [...document.querySelectorAll<HTMLAnchorElement>(".views a")];
 
 const nodes = {
@@ -236,14 +238,23 @@ nodes.form.addEventListener("submit", async (event) => {
   }
 });
 
-function viewFromPath(path: string): "food" | "journal" {
-  return path === "/journal" ? "journal" : "food";
+type View = "food" | "journal" | "ask";
+
+function viewFromPath(path: string): View {
+  if (path === "/journal") {
+    return "journal";
+  }
+  if (path === "/ask") {
+    return "ask";
+  }
+  return "food";
 }
 
-function show(view: "food" | "journal"): void {
+function show(view: View): void {
   viewFood.hidden = view !== "food";
   viewJournal.hidden = view !== "journal";
-  document.title = view === "journal" ? "Taco · Journal" : "Taco · Food";
+  viewAsk.hidden = view !== "ask";
+  document.title = view === "journal" ? "Taco · Journal" : view === "ask" ? "Taco · Ask" : "Taco · Food";
   for (const link of viewLinks) {
     if (link.dataset.view === view) {
       link.setAttribute("aria-current", "page");
@@ -269,7 +280,8 @@ for (const link of viewLinks) {
       return;
     }
     event.preventDefault();
-    const view = link.dataset.view === "journal" ? "journal" : "food";
+    const named = link.dataset.view;
+    const view: View = named === "journal" || named === "ask" ? named : "food";
     if (location.pathname !== url.pathname) {
       history.pushState({}, "", url.pathname);
     }
@@ -278,7 +290,7 @@ for (const link of viewLinks) {
 }
 
 window.addEventListener("popstate", () => {
-  if (location.pathname !== "/" && location.pathname !== "/journal") {
+  if (location.pathname !== "/" && location.pathname !== "/journal" && location.pathname !== "/ask") {
     history.replaceState({}, "", "/");
   }
   show(viewFromPath(location.pathname));
@@ -343,6 +355,7 @@ function debounce(run: () => void): () => void {
 }
 
 const journal = mountJournal();
+mountAsk();
 
 const syncFood = debounce(() => {
   if (!mealsReady || viewFood.hidden) {
@@ -371,14 +384,14 @@ watchChanges(
     }
   },
   () => {
-    if (viewFood.hidden) {
-      syncJournal();
-    } else {
+    if (!viewFood.hidden) {
       syncFood();
+    } else if (!viewJournal.hidden) {
+      syncJournal();
     }
   },
 );
-if (location.pathname !== "/" && location.pathname !== "/journal") {
+if (location.pathname !== "/" && location.pathname !== "/journal" && location.pathname !== "/ask") {
   history.replaceState({}, "", "/");
 }
 show(viewFromPath(location.pathname));

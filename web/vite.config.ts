@@ -13,8 +13,11 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: process.env.VITE_API_PROXY ?? "http://127.0.0.1:3001",
-        timeout: 60_000,
-        proxyTimeout: 60_000,
+        timeout: 180_000,
+        proxyTimeout: 180_000,
+      },
+      "/a2ui": {
+        target: process.env.VITE_API_PROXY ?? "http://127.0.0.1:3001",
       },
     },
   },

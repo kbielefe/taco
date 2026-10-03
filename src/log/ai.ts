@@ -8,6 +8,7 @@ import { DEFAULT_FOOD_LOG_MODEL, type FoodLogAi, type ParsedMeal, type SelectMat
 
 const DEFAULT_XAI_BASE_URL = "https://api.x.ai/v1";
 const DEFAULT_REASONING_EFFORT = "low";
+const DEFAULT_ASK_REASONING_EFFORT = "medium";
 const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 export type XaiReasoningEffort = (typeof REASONING_EFFORTS)[number];
@@ -21,12 +22,34 @@ export interface XaiFoodLogAiOptions {
 }
 
 export function readReasoningEffort(explicit?: string): XaiReasoningEffort {
-  const raw = (explicit ?? process.env.XAI_REASONING_EFFORT ?? DEFAULT_REASONING_EFFORT).trim();
-  const value = raw === "" ? DEFAULT_REASONING_EFFORT : raw;
+  return parseReasoningEffort(
+    explicit ?? process.env.XAI_REASONING_EFFORT,
+    DEFAULT_REASONING_EFFORT,
+    "XAI_REASONING_EFFORT",
+  );
+}
+
+/** Ask uses its own effort. An unset value stays medium and does not follow XAI_REASONING_EFFORT. */
+export function readAskReasoningEffort(
+  explicit?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): XaiReasoningEffort {
+  return parseReasoningEffort(
+    explicit ?? env.XAI_ASK_REASONING_EFFORT,
+    DEFAULT_ASK_REASONING_EFFORT,
+    "XAI_ASK_REASONING_EFFORT",
+  );
+}
+
+function parseReasoningEffort(
+  raw: string | undefined,
+  fallback: XaiReasoningEffort,
+  name: string,
+): XaiReasoningEffort {
+  const trimmed = (raw ?? "").trim();
+  const value = trimmed === "" ? fallback : trimmed;
   if (!(REASONING_EFFORTS as readonly string[]).includes(value)) {
-    throw new FoodLogConfigError(
-      `XAI_REASONING_EFFORT must be one of: ${REASONING_EFFORTS.join(", ")}`,
-    );
+    throw new FoodLogConfigError(`${name} must be one of: ${REASONING_EFFORTS.join(", ")}`);
   }
   return value as XaiReasoningEffort;
 }

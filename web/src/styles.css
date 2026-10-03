@@ -294,8 +294,10 @@ body::before {
 
 #meal,
 #kind,
+#ask-question,
 #log-button,
 #journal-log,
+#ask-button,
 .icon-button,
 .button-secondary,
 .choice,
@@ -306,6 +308,7 @@ body::before {
 
 #meal,
 #kind,
+#ask-question,
 .text-input,
 .draft select {
   width: 100%;
@@ -320,12 +323,14 @@ body::before {
 }
 
 #meal[aria-invalid="true"],
-#kind[aria-invalid="true"] {
+#kind[aria-invalid="true"],
+#ask-question[aria-invalid="true"] {
   border-color: var(--danger);
 }
 
 #log-button,
-#journal-log {
+#journal-log,
+#ask-button {
   flex: 0 0 auto;
   min-height: 2.75rem;
   min-width: 2.75rem;
@@ -340,6 +345,7 @@ body::before {
 
 #log-button:disabled,
 #journal-log:disabled,
+#ask-button:disabled,
 .button-secondary:disabled,
 .icon-button:disabled {
   opacity: 0.65;
@@ -715,4 +721,94 @@ body::before {
 
 .draft .hint {
   margin-bottom: 0;
+}
+
+.page:has(#view-ask:not([hidden])) {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: var(--space);
+}
+
+#view-ask:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: 0.75rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ask-form {
+  margin-top: auto;
+}
+
+.ask-pin {
+  top: auto;
+  bottom: 0;
+}
+
+.ask-turn {
+  margin: 0.75rem 0;
+}
+
+.ask-user p,
+.ask-answer {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.ask-user p {
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.ask-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+
+.ask-body {
+  margin: 0.35rem 0;
+  white-space: pre-wrap;
+}
+
+.ask-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.ask-chart {
+  margin: 0.35rem 0 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ask-chart figcaption {
+  margin-bottom: 0.25rem;
+  font-weight: 650;
+}
+
+.ask-log,
+.ask-turn,
+.ask-surface {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ask-chart-canvas {
+  position: relative;
+  width: 100%;
+  height: 14rem;
+  min-width: 0;
+}
+
+.ask-fallback {
+  margin: 0.35rem 0;
+  color: var(--muted);
 }

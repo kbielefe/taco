@@ -12,6 +12,10 @@ import { sumMacros } from "../log/nutrients.js";
 import { parseIsoDate, serializeKind, serializeMeal, serializeObservation, type MealJson } from "./serialize.js";
 import type { DataCatalog } from "../mcp/catalog.js";
 import { handleMcpRequest } from "../mcp/http.js";
+import { CATALOG } from "../ask/catalog.js";
+import { createXaiAskModel, runAsk, type AskModel } from "../ask/agent.js";
+import { AskConfigError, AskFailedError } from "../ask/errors.js";
+import { parseAskRequest } from "../ask/request.js";
 import { createSyncHub, type SyncHub, type SyncTopic } from "./sync.js";
 
 const SYNC_PING_MS = 25_000;
@@ -38,11 +42,21 @@ export interface AppDeps {
   corrections?: CorrectionRunner;
   env?: NodeJS.ProcessEnv;
   sync?: SyncHub;
-  /** Read-only health data. When omitted, POST /mcp answers 503. */
+  /** Read-only health data. When omitted, POST /mcp and POST /api/ask answer 503. */
   data?: DataCatalog;
+  /** Ask model. Tests inject this. The default calls xAI. */
+  askModel?: AskModel;
 }
 
-export function createApp({ logger, journal, corrections, env = process.env, sync = createSyncHub(), data }: AppDeps): Hono {
+export function createApp({
+  logger,
+  journal,
+  corrections,
+  env = process.env,
+  sync = createSyncHub(),
+  data,
+  askModel,
+}: AppDeps): Hono {
   const presentMeal = async (entry: FoodLogEntry): Promise<MealJson> => {
     const fit = corrections ? await corrections.current() : null;
     return serializeMeal(entry, fit);
@@ -284,6 +298,62 @@ export function createApp({ logger, journal, corrections, env = process.env, syn
     }
   });
 
+  app.get("/a2ui/taco/v1/catalog.json", (c) => {
+    c.header("Cache-Control", "public, max-age=3600");
+    return c.json(CATALOG);
+  });
+
+  app.post("/api/ask", async (c) => {
+    const body = await readJson(c);
+    if (!body) {
+      return c.json({ error: { message: "Enter a question." } }, 400);
+    }
+    const request = parseAskRequest(body);
+    if (!request.ok) {
+      return c.json({ error: { message: request.message } }, request.status);
+    }
+    if (!data) {
+      return c.json({ error: { message: "The health data isn't connected." } }, 503);
+    }
+    let model = askModel;
+    if (!model) {
+      try {
+        model = createXaiAskModel({ env });
+      } catch (error) {
+        if (error instanceof AskConfigError) {
+          return c.json({ error: { message: error.message } }, 503);
+        }
+        throw error;
+      }
+    }
+
+    c.header("Content-Type", "application/x-ndjson; charset=utf-8");
+    c.header("Cache-Control", "no-cache");
+    c.header("X-Accel-Buffering", "no");
+    return stream(c, async (out) => {
+      try {
+        await runAsk({
+          question: request.question,
+          timeZone: request.timeZone,
+          today: request.today,
+          history: request.history,
+          data,
+          model,
+          emit: async (event) => {
+            await out.writeln(JSON.stringify(event));
+          },
+        });
+        await out.writeln(JSON.stringify({ type: "done" }));
+      } catch (error) {
+        const mapped = askHttpError(error);
+        if (mapped.status === 500) {
+          console.error(error);
+        }
+        await out.writeln(JSON.stringify({ type: "error", error: { message: mapped.message }, status: mapped.status }));
+      }
+    });
+  });
+
   app.delete("/api/journal/:id", async (c) => {
     const id = c.req.param("id");
     const existing = await journal.get(id);
@@ -299,6 +369,16 @@ export function createApp({ logger, journal, corrections, env = process.env, syn
   });
 
   return app;
+}
+
+function askHttpError(error: unknown): { message: string; status: 422 | 500 | 503 } {
+  if (error instanceof AskConfigError) {
+    return { message: error.message, status: 503 };
+  }
+  if (error instanceof AskFailedError) {
+    return { message: error.message, status: 422 };
+  }
+  return { message: "Couldn't answer that. Try again in a moment.", status: 500 };
 }
 
 function journalHttpError(error: unknown): { message: string; status: 400 | 404 | 409 } | undefined {

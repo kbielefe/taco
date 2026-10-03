@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { readReasoningEffort, XaiFoodLogAi } from "./ai.js";
+import { readAskReasoningEffort, readReasoningEffort, XaiFoodLogAi } from "./ai.js";
 import { FoodLogConfigError } from "./errors.js";
+import { DEFAULT_FOOD_LOG_MODEL } from "./types.js";
 
 describe("XaiFoodLogAi", () => {
   it("throws when XAI_API_KEY is missing on first request", async () => {
@@ -61,6 +62,35 @@ describe("XaiFoodLogAi", () => {
       await ai.parseQuery("water");
       expect(calls[0]?.reasoning_effort).toBe("low");
     } finally {
+      if (previous === undefined) {
+        delete process.env.XAI_REASONING_EFFORT;
+      } else {
+        process.env.XAI_REASONING_EFFORT = previous;
+      }
+    }
+  });
+
+  it("uses grok-4.7 for meal logging", () => {
+    expect(DEFAULT_FOOD_LOG_MODEL).toBe("grok-4.7");
+  });
+
+  it("defaults ask effort to medium and ignores the food-log effort", () => {
+    const previousAsk = process.env.XAI_ASK_REASONING_EFFORT;
+    const previous = process.env.XAI_REASONING_EFFORT;
+    delete process.env.XAI_ASK_REASONING_EFFORT;
+    process.env.XAI_REASONING_EFFORT = "low";
+    try {
+      expect(readAskReasoningEffort()).toBe("medium");
+      expect(readAskReasoningEffort(undefined, { XAI_REASONING_EFFORT: "high", XAI_ASK_REASONING_EFFORT: "xhigh" })).toBe(
+        "xhigh",
+      );
+      expect(() => readAskReasoningEffort("turbo")).toThrow(/XAI_ASK_REASONING_EFFORT/);
+    } finally {
+      if (previousAsk === undefined) {
+        delete process.env.XAI_ASK_REASONING_EFFORT;
+      } else {
+        process.env.XAI_ASK_REASONING_EFFORT = previousAsk;
+      }
       if (previous === undefined) {
         delete process.env.XAI_REASONING_EFFORT;
       } else {

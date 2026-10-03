@@ -30,6 +30,7 @@
   "dependencies": {
     "@hono/node-server": "^2.1.1",
     "bson": "^6.10.4",
+    "chart.js": "^4.5.1",
     "hono": "^4.13.8",
     "mongodb": "^6.20.0",
     "openai": "^7.20.0",
@@ -38,6 +39,7 @@
   "devDependencies": {
     "@types/node": "^24.5.2",
     "concurrently": "^10.0.5",
+    "happy-dom": "^20.14.5",
     "tsx": "^4.23.15",
     "typescript": "^5.9.2",
     "vite": "^7.3.6",

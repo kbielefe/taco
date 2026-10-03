@@ -13,6 +13,7 @@
         <nav class="views" aria-label="Trackers">
           <a href="/" data-view="food">Food</a>
           <a href="/journal" data-view="journal">Journal</a>
+          <a href="/ask" data-view="ask">Ask</a>
         </nav>
       </header>
 
@@ -143,6 +144,37 @@
             <p id="journal-empty" class="empty">Nothing logged yet</p>
             <ol id="journal-entries" class="meals"></ol>
           </section>
+        </form>
+      </div>
+
+      <div id="view-ask" hidden>
+        <div id="ask-log" class="ask-log" role="log" aria-relevant="additions">
+          <p id="ask-empty" class="empty">Ask about a meal, a weight, or a symptom.</p>
+        </div>
+        <form id="ask-form" class="composer ask-form">
+          <div class="field">
+            <label for="ask-question">Ask about your data</label>
+            <p id="ask-hint" class="hint">Calories this week, or weight this month.</p>
+          </div>
+          <div class="composer-pin ask-pin">
+            <p id="ask-error" class="error" hidden></p>
+            <div class="composer-row">
+              <div class="combobox">
+                <input
+                  id="ask-question"
+                  name="question"
+                  type="text"
+                  autocomplete="off"
+                  enterkeyhint="send"
+                  maxlength="2000"
+                  aria-describedby="ask-hint"
+                  spellcheck="true"
+                />
+              </div>
+              <button type="submit" id="ask-button">Ask</button>
+            </div>
+            <p id="ask-status" class="status" role="status" aria-live="polite"></p>
+          </div>
         </form>
       </div>
     </div>
