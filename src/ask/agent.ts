@@ -178,7 +178,8 @@ export async function runAsk(options: RunAskOptions): Promise<void> {
       });
       results.push({ type: "function_call_output", call_id: call.callId, output: outputText });
     }
-    input = [...output, ...results];
+    // Keep the question and earlier tool results. Reasoning items stay with the calls that follow them.
+    input = [...input, ...output, ...results];
     return false;
   }
 }

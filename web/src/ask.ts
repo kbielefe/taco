@@ -1,7 +1,36 @@
+import { MAX_TURN } from "../../src/ask/request.js";
 import { releaseSurface, renderSurface } from "./a2ui.js";
 import { localTimeZone } from "./time.js";
 
 const MAX_HISTORY = 20;
+
+/** The next turn's memory of this answer: the sentence, then the chart the page drew. */
+export function assistantMemory(text: string, surface: ParentNode): string {
+  const spoken = text.trim();
+  const chart = chartMemory(surface);
+  const combined = [spoken, chart].filter((part) => part !== "").join("\n");
+  return (combined || "Shown a chart.").slice(0, MAX_TURN);
+}
+
+function chartMemory(surface: ParentNode): string {
+  const lines: string[] = [];
+  for (const node of surface.querySelectorAll(".ask-title, .ask-body, figcaption")) {
+    const value = node.textContent?.trim() ?? "";
+    if (value) {
+      lines.push(value);
+    }
+  }
+  const table = surface.querySelector("table");
+  if (table) {
+    for (const row of table.querySelectorAll("tbody tr")) {
+      const cells = [...row.children].map((cell) => cell.textContent?.trim() ?? "").filter((cell) => cell !== "");
+      if (cells.length > 0) {
+        lines.push(cells.join(" "));
+      }
+    }
+  }
+  return lines.join("\n");
+}
 
 interface AskTurn {
   role: "user" | "assistant";
@@ -88,11 +117,7 @@ export function mountAsk(): void {
           renderSurface(surface, messages);
         },
       });
-      const caption = [...surface.querySelectorAll("figcaption")]
-        .map((node) => node.textContent?.trim() ?? "")
-        .filter((value) => value !== "")
-        .join(", ");
-      history.push({ role: "user", content: question }, { role: "assistant", content: text.trim() || caption || "Shown a chart." });
+      history.push({ role: "user", content: question }, { role: "assistant", content: assistantMemory(text, surface) });
       statusEl.textContent = "";
     } catch (error) {
       releaseSurface(surface);

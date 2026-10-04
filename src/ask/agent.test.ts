@@ -138,7 +138,67 @@ describe("runAsk", () => {
     await expect(ask(model)).rejects.toBeInstanceOf(AskFailedError);
     expect(inputs).toHaveLength(8);
   });
+
+  it("should keep the question and earlier results when another round runs", async () => {
+    const { model, inputs } = scripted([
+      [call("find", { collection: "kinds" }, "find-1")],
+      [call("find", { collection: "observations" }, "find-2")],
+      [text("September 30.")],
+    ]);
+    await runAsk({
+      question: "What day was the 6am migraine?",
+      timeZone: "America/Chicago",
+      today: "2026-10-03",
+      history: [
+        { role: "user", content: "show a histogram of migraine hour" },
+        { role: "assistant", content: "Shown above.\nHour of day\n6 1" },
+      ],
+      data,
+      model,
+      emit: async () => undefined,
+    });
+    expect(labels(inputs[0])).toEqual([
+      "user:show a histogram of migraine hour",
+      "assistant:Shown above.\nHour of day\n6 1",
+      "user:What day was the 6am migraine?",
+    ]);
+    expect(labels(inputs[1])).toEqual([
+      "user:show a histogram of migraine hour",
+      "assistant:Shown above.\nHour of day\n6 1",
+      "user:What day was the 6am migraine?",
+      "call:find",
+      "result:banana",
+    ]);
+    expect(labels(inputs[2])).toEqual([
+      "user:show a histogram of migraine hour",
+      "assistant:Shown above.\nHour of day\n6 1",
+      "user:What day was the 6am migraine?",
+      "call:find",
+      "result:banana",
+      "call:find",
+      "result:banana",
+    ]);
+  });
 });
+
+function labels(items: unknown[]): string[] {
+  return items.map((item) => {
+    if (!item || typeof item !== "object") {
+      return "?";
+    }
+    const record = item as Record<string, unknown>;
+    if (typeof record.role === "string") {
+      return `${record.role}:${String(record.content)}`;
+    }
+    if (record.type === "function_call") {
+      return `call:${String(record.name)}`;
+    }
+    if (record.type === "function_call_output") {
+      return `result:${String(record.output).includes("banana") ? "banana" : "other"}`;
+    }
+    return String(record.type);
+  });
+}
 
 describe("createXaiAskModel", () => {
   it("uses grok-4.7 and medium effort without reading the food-log effort", async () => {

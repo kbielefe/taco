@@ -73,6 +73,38 @@ describe("validateA2ui", () => {
     expect(wrong).toEqual({ ok: false, message: `catalogId must be ${CATALOG_ID}.` });
   });
 
+  it("stamps v0.9 when the messages omit version", () => {
+    const result = validateA2ui([
+      { createSurface: { surfaceId: "answer", catalogId: CATALOG_ID } },
+      {
+        updateComponents: {
+          surfaceId: "answer",
+          components: [{ id: "root", component: "Text", text: "Sep 30", variant: "body" }],
+        },
+      },
+    ]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.messages[0].version).toBe("v0.9");
+      expect(result.messages[1].version).toBe("v0.9");
+      expect(result.messages[1].updateComponents.components[0]).toMatchObject({ text: "Sep 30" });
+    }
+  });
+
+  it("rejects a version other than v0.9", () => {
+    const result = validateA2ui([
+      { version: "v0.8", createSurface: { surfaceId: "answer", catalogId: CATALOG_ID } },
+      {
+        version: "v0.9",
+        updateComponents: {
+          surfaceId: "answer",
+          components: [{ id: "root", component: "Text", text: "Hi", variant: "body" }],
+        },
+      },
+    ]);
+    expect(result).toEqual({ ok: false, message: "A2UI messages use version v0.9." });
+  });
+
   it("rejects an extra chart field", () => {
     const extra = validateA2ui(
       surface([

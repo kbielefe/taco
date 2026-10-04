@@ -222,7 +222,8 @@ function messageRecord(value: unknown): Record<string, unknown> | string {
     return "Each A2UI message must be an object.";
   }
   const record = value as Record<string, unknown>;
-  if (record.version !== "v0.9") {
+  // A missing version is v0.9. The readers stamp it onto the messages the page draws.
+  if (record.version !== undefined && record.version !== "v0.9") {
     return "A2UI messages use version v0.9.";
   }
   const keys = Object.keys(record).filter((key) => key !== "version");
