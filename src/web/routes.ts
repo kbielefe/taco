@@ -3,6 +3,7 @@ import { stream, streamSSE } from "hono/streaming";
 import { isWeighIn, type CorrectionRunner } from "../correct/run.js";
 import { energyWindow, recommendDay } from "../energy/recommend.js";
 import { readBodyProfile } from "../energy/profile.js";
+import { FdcNetworkError, FdcRateLimitError, FdcServerError, FdcTimeoutError } from "../fdc/errors.js";
 import { JournalConflictError, JournalNotFoundError, JournalValidationError } from "../journal/errors.js";
 import type { Journal } from "../journal/journal.js";
 import { FoodLogAiError, FoodLogConfigError, FoodLogMatchError } from "../log/errors.js";
@@ -35,7 +36,19 @@ function publicErrorMessage(error: unknown): { message: string; status: 400 | 42
   if (error instanceof FoodLogAiError) {
     return { message: "Couldn't understand that meal. Try again in a moment.", status: 422 };
   }
+  if (isTemporaryFdcFailure(error)) {
+    return { message: "The USDA food database is temporarily unavailable. Try again in a moment.", status: 503 };
+  }
   return { message: "Something went wrong. Try again.", status: 500 };
+}
+
+function isTemporaryFdcFailure(error: unknown): boolean {
+  return (
+    error instanceof FdcNetworkError ||
+    error instanceof FdcTimeoutError ||
+    error instanceof FdcServerError ||
+    error instanceof FdcRateLimitError
+  );
 }
 
 export interface AppDeps {
@@ -161,6 +174,9 @@ export function createApp({
         if (mapped.status === 500) {
           throw error;
         }
+        if (mapped.status === 503) {
+          console.error(error);
+        }
         return c.json({ error: { message: mapped.message } }, mapped.status);
       }
     }
@@ -180,7 +196,7 @@ export function createApp({
         publish("food");
       } catch (error) {
         const mapped = publicErrorMessage(error);
-        if (mapped.status === 500) {
+        if (mapped.status >= 500) {
           console.error(error);
         }
         await out.writeln(JSON.stringify({ type: "error", error: { message: mapped.message }, status: mapped.status }));

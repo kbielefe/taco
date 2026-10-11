@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createCorrectionRunner, type CorrectionRunner } from "../correct/run.js";
 import { correctedMacros, fitEnergyWindows, type CorrectionFit } from "../correct/fit.js";
 import { MemoryCacheStore } from "../fdc/cache.js";
+import { FdcNetworkError, FdcRateLimitError, FdcServerError, FdcTimeoutError } from "../fdc/errors.js";
 import type { FoodItem, SearchResult, SearchResultFood } from "../fdc/types.js";
 import { Journal } from "../journal/journal.js";
 import { MemoryJournalStore } from "../journal/store.js";
@@ -257,6 +258,51 @@ describe("food log HTTP API", () => {
     expect(last?.type).toBe("error");
     expect(last?.status).toBe(422);
     expect(last?.error?.message).toMatch(/simpler description/i);
+  });
+
+  it.each([
+    ["network", new FdcNetworkError("Failed to reach the USDA FDC API")],
+    ["timeout", new FdcTimeoutError("USDA FDC request timed out after 10000ms")],
+    ["server", new FdcServerError("USDA FDC returned 503", { status: 503 })],
+    ["rate limit", new FdcRateLimitError("USDA FDC rate limit exceeded", 60_000)],
+  ])("tells the user when the USDA database has a temporary %s failure", async (_label, failure) => {
+    const logger = new FoodLogger({
+      fdc: {
+        searchFoods: vi.fn(async () => {
+          throw failure;
+        }),
+        getFood: vi.fn(async () => details(1, "x", 1)),
+      },
+      ai: mockAi({ items: [{ name: "banana", searchQueries: ["banana"], servingHint: "1 banana", quantity: 1 }] }, {
+        fdcId: 1,
+        grams: 118,
+        servingDescription: "1 banana",
+      }),
+      queryCache: new MemoryCacheStore(),
+      foodStore: new MemoryFoodStore(),
+    });
+    const app = createApp({ logger, journal: new Journal(new MemoryJournalStore()) });
+    const message = "The USDA food database is temporarily unavailable. Try again in a moment.";
+
+    const json = await app.request("/api/meals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "banana" }),
+    });
+    expect(json.status).toBe(503);
+    expect(await json.json()).toEqual({ error: { message } });
+
+    const streamed = await app.request("/api/meals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
+      body: JSON.stringify({ query: "banana" }),
+    });
+    expect(streamed.status).toBe(200);
+    const events = (await streamed.text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { type: string; status?: number; error?: { message: string } });
+    expect(events.at(-1)).toEqual({ type: "error", error: { message }, status: 503 });
   });
 });
 
