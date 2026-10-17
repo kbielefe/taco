@@ -8,7 +8,7 @@ web
 
 ## Users
 
-One person: the owner. They log meals, weight, and symptoms through the day, on a phone and at a desk. Food can also be logged by voice. Nobody else has an account.
+One person: the owner. They log meals, weight, and symptoms through the day, on a phone and at a desk. Nobody else has an account.
 
 ## Product Purpose
 
@@ -32,8 +32,6 @@ Food, Journal, and Ask show today. The browser sends local midnight. The server 
 Food starts from "What did you eat?" Journal starts from "What do you want to record?" A journal entry may fill any subset of that kind's fields. The first field can fill the rest from the last time that same value was used.
 
 Ask is a conversation in the open browser tab. The transcript is not stored. Refresh clears it.
-
-Voice is the website and a private Alexa skill. The skill logs a meal and speaks today's calories, macros, and what is left. Journal is not logged by voice. There is no Google voice path. The skill's invocation name is currently `taco`.
 
 The deployed site is https://health.bielefeldt.dev.
 
@@ -70,13 +68,11 @@ On Food and Journal, a photo sits only outside the content column. The column it
 ### Access
 
 - Private. When Google sign-in is configured, it is the only way in, for one email address. A shared password is not used. When Google sign-in is not configured, the local app stays open.
-- Alexa is a separate sign-in. Linking is approved from the already signed-in site.
 
 ### Out of scope
 
 - Other people's accounts, sharing, or a public signup.
-- Google Home or any other Google voice path.
-- Journal entries by voice.
+- Voice logging. Alexa has been dropped: no skill, no Alexa sign-in, and no spoken meals. Google Home stays out as well.
 - A separate journal chart page. Looking across days is Ask.
 
 ### Undecided
