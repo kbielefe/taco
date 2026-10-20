@@ -322,14 +322,14 @@ function labelsOf(series: ChartSeries[]): string[] {
 
 function seriesColor(name: string, index: number): string {
   const tokenName = MACRO_TOKENS[name.trim().toLowerCase()] ?? SERIES_TOKENS[index % SERIES_TOKENS.length] ?? "--accent";
-  return token(tokenName) || "#0f766e";
+  return token(tokenName) || "#9ed84a";
 }
 
 function readTheme(): { fg: string; muted: string; border: string } {
   return {
-    fg: token("--fg") || "#1c1917",
-    muted: token("--muted") || "#57534e",
-    border: token("--border") || "#e4ddd4",
+    fg: token("--fg") || "#f4f7ec",
+    muted: token("--muted") || "#8fa894",
+    border: token("--border") || "#5a8470",
   };
 }
 

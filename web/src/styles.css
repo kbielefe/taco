@@ -1,50 +1,43 @@
+@font-face {
+  font-family: Figtree;
+  src: url("/fonts/figtree.woff2") format("woff2");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: Besley;
+  src: url("/fonts/besley.woff2") format("woff2");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
-  color-scheme: light dark;
-  --bg: #f4f0ea;
-  --surface: #fffcf7;
-  --fg: #1c1917;
-  --muted: #57534e;
-  --border: #e4ddd4;
-  --accent: #0f766e;
-  --accent-fg: #f0fdfa;
-  --danger: #b91c1c;
-  --protein: #9a3412;
-  --fat: #a16207;
-  --carb: #1d4ed8;
-  --fiber: #3f6212;
+  color-scheme: dark;
+  --bg: #13211b;
+  --surface: #1c3128;
+  --fg: #f4f7ec;
+  --muted: #8fa894;
+  --border: #5a8470;
+  --accent: #9ed84a;
+  --accent-fg: #10200c;
+  --danger: #ff907c;
+  --protein: #ffb15a;
+  --fat: #f6d7a1;
+  --carb: #e8b0ff;
+  --fiber: #7ddec4;
   --radius: 0.75rem;
   --space: clamp(1rem, 3vw, 1.75rem);
   --frame: clamp(0.7rem, 2.6vw, 1.35rem);
-  --shadow: 0 1px 0 rgb(28 25 23 / 6%);
-  --edge-light: #fffdf8;
-  --edge-mid: #d9cbb8;
-  --edge-dark: #5e4636;
-  font-family: system-ui, "Segoe UI", sans-serif;
+  --shadow: none;
+  font-family: Figtree, system-ui, sans-serif;
   font-size: clamp(1rem, 0.25vw + 0.95rem, 1.125rem);
+  font-synthesis: none;
   line-height: 1.5;
   background-color: var(--bg);
   color: var(--fg);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1c1917;
-    --surface: #292524;
-    --fg: #f5f5f4;
-    --muted: #a8a29e;
-    --border: #44403c;
-    --accent: #2dd4bf;
-    --accent-fg: #042f2e;
-    --danger: #fb7185;
-    --protein: #fdba74;
-    --fat: #fde68a;
-    --carb: #93c5fd;
-    --fiber: #bef264;
-    --shadow: none;
-    --edge-light: #514c47;
-    --edge-mid: #2a2623;
-    --edge-dark: #0a0908;
-  }
 }
 
 * {
@@ -54,6 +47,14 @@
 html {
   scroll-padding-top: 5.5rem;
   background-color: var(--bg);
+  accent-color: var(--accent);
+  caret-color: var(--accent);
+  scrollbar-color: var(--border) transparent;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-fg);
 }
 
 body {
@@ -93,17 +94,10 @@ body::before {
   min-height: calc(100dvh - var(--frame));
   padding: var(--space);
   padding-bottom: 4rem;
-  border: 7px solid transparent;
-  border-radius: 1.35rem;
-  background-image:
-    linear-gradient(var(--bg), var(--bg)),
-    linear-gradient(145deg, var(--edge-light) 0%, var(--edge-mid) 46%, var(--edge-dark) 100%);
-  background-origin: border-box;
-  background-clip: padding-box, border-box;
-  box-shadow:
-    inset 1px 1px 0 color-mix(in srgb, var(--edge-light) 70%, transparent),
-    inset -1px -1px 0 color-mix(in srgb, var(--edge-dark) 45%, transparent),
-    4px 7px 18px rgb(24 12 6 / 34%);
+  border: 1px solid color-mix(in srgb, #e4f0c8 38%, var(--border));
+  border-radius: 1.15rem;
+  background: var(--bg);
+  box-shadow: 0 16px 40px rgb(6 12 8 / 46%);
 }
 
 .masthead {
@@ -137,14 +131,21 @@ body::before {
 
 .views a[aria-current="page"] {
   color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.views a[aria-current="page"]:hover,
+.views a[aria-current="page"]:focus-visible {
+  color: var(--accent);
 }
 
 .date {
   margin: 0;
-  font-size: clamp(1.75rem, 1.35rem + 1.4vw, 2.35rem);
-  font-weight: 650;
+  font-family: Besley, "Iowan Old Style", Palatino, serif;
+  font-size: clamp(1.85rem, 1.4rem + 1.5vw, 2.5rem);
+  font-weight: 560;
   letter-spacing: -0.03em;
-  line-height: 1.15;
+  line-height: 1.12;
 }
 
 .totals {
@@ -327,10 +328,9 @@ body::before {
 }
 
 .macro-label {
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: 650;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  letter-spacing: 0;
   line-height: 1.15;
   overflow-wrap: anywhere;
 }
@@ -465,6 +465,18 @@ body::before {
   cursor: pointer;
 }
 
+#log-button:hover,
+#journal-log:hover,
+#ask-button:hover {
+  background: color-mix(in srgb, var(--accent) 84%, white);
+}
+
+#log-button:active,
+#journal-log:active,
+#ask-button:active {
+  background: color-mix(in srgb, var(--accent) 78%, black);
+}
+
 #log-button:disabled,
 #journal-log:disabled,
 #ask-button:disabled,
@@ -485,7 +497,7 @@ body::before {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 10px 28px rgb(28 25 23 / 22%);
+  box-shadow: 0 12px 28px rgb(6 12 8 / 48%);
   max-height: 14rem;
   overflow: auto;
 }
@@ -796,6 +808,12 @@ button.log-open {
   color: var(--fg);
   font-weight: 650;
   cursor: pointer;
+}
+
+.button-secondary:hover,
+.undo-bar button:hover,
+.choice:hover:not([aria-pressed="true"]) {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
 }
 
 .draft {
