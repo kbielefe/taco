@@ -108,6 +108,10 @@ export class FoodLogger {
     return this.foodStore.deleteById(id);
   }
 
+  async setServings(id: string, servings: number): Promise<FoodLogEntry | null> {
+    return this.foodStore.setServings(id, servings);
+  }
+
   async suggest(prefix: string, limit = SUGGEST_LIMIT): Promise<FoodLogSuggestion[]> {
     const normalized = normalizeQuery(prefix);
     const entries = await this.queryCache.listRecent({

@@ -225,6 +225,10 @@ function plusIcon(): SVGSVGElement {
   return strokeIcon(["M12 5v14", "M5 12h14"]);
 }
 
+function trashIcon(): SVGSVGElement {
+  return strokeIcon(["M3 6h18", "M8 6V4h8v2", "M19 6l-1 14H6L5 6", "M10 11v6", "M14 11v6"]);
+}
+
 export function mountJournal(): { load: () => Promise<void> } {
   const form = required(document.querySelector<HTMLFormElement>("#journal-form"), "journal-form");
   const input = required(document.querySelector<HTMLInputElement>("#kind"), "kind");
@@ -1036,22 +1040,24 @@ export function mountJournal(): { load: () => Promise<void> } {
     const row = el("li", "meal-row");
     row.dataset.id = entry.id;
     const article = el("article", "meal");
-    const top = el("div", "meal-top");
-    const time = el("time");
-    time.dateTime = entry.at;
-    time.textContent = formatTime(entry.at);
-    const title = el("h3", "meal-title", entry.kind.label);
-    const end = el("div", "meal-end single");
     const when = formatTime(entry.at);
-    const del = el("button", "text-delete", `Delete ${when}`);
+    const head = el("div", "log-head");
+    const main = el("div", "log-open");
+    main.append(el("span", "log-title", entry.kind.label), el("span", "log-value", figureFor(entry)));
+    const del = el("button", "icon-button delete log-delete");
     del.type = "button";
     del.setAttribute("aria-label", `Delete ${when} ${entry.kind.label}`);
+    del.append(trashIcon());
     del.addEventListener("click", () => {
       removeEntry(entry, row);
     });
-    end.append(el("p", "meal-kcal", figureFor(entry)));
-    top.append(time, end);
-    article.append(top, title, del);
+    head.append(main, del);
+    const meta = el("div", "log-meta");
+    const time = el("time");
+    time.dateTime = entry.at;
+    time.textContent = when;
+    meta.append(time);
+    article.append(head, meta);
     row.append(article);
     return row;
   }

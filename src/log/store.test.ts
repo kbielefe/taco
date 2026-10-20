@@ -40,4 +40,15 @@ describe("MemoryFoodStore", () => {
     expect(await store.deleteById("not-an-id")).toBe(false);
     expect(await store.deleteById(new ObjectId().toString())).toBe(false);
   });
+
+  it("stores a serving count and clears it at one", async () => {
+    const store = new MemoryFoodStore();
+    const stored = await store.insert(entry());
+    const doubled = await store.setServings(stored._id.toString(), 2);
+    expect(doubled?.servings).toBe(2);
+    expect(store.entries[0]?.servings).toBe(2);
+    const single = await store.setServings(stored._id.toString(), 1);
+    expect(single?.servings).toBeUndefined();
+    expect(await store.setServings(new ObjectId().toString(), 2)).toBeNull();
+  });
 });

@@ -12,6 +12,16 @@ function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+export function scaleMacros(macros: Macros, factor: number): Macros {
+  return {
+    caloriesKcal: Math.round(macros.caloriesKcal * factor),
+    proteinG: round1(macros.proteinG * factor),
+    fatG: round1(macros.fatG * factor),
+    carbG: round1(macros.carbG * factor),
+    fiberG: round1(macros.fiberG * factor),
+  };
+}
+
 export function sumMacros(items: Macros[]): Macros {
   const acc = items.reduce(
     (sum, item) => ({

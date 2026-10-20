@@ -30,6 +30,7 @@ export interface Meal {
   createdAt: string;
   query: string;
   description: string;
+  servings?: number;
   macros: Macros;
   adjusted?: Macros;
   items: MealItem[];
@@ -204,6 +205,18 @@ function parseMealLogLine(line: string):
     return { type: "error", error: { message }, ...(status !== undefined ? { status } : {}) };
   }
   return undefined;
+}
+
+export async function setMealServings(id: string, servings: number): Promise<Meal> {
+  const response = await fetch(`/api/meals/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ servings }),
+  });
+  if (!response.ok) {
+    throw await readError(response);
+  }
+  return response.json() as Promise<Meal>;
 }
 
 export async function deleteMeal(id: string): Promise<void> {

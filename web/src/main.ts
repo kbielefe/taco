@@ -1,6 +1,7 @@
 import {
   deleteMeal,
   fetchEnergy,
+  setMealServings,
   fetchMeals,
   fetchSuggestions,
   logMeal,
@@ -12,7 +13,7 @@ import { mountAsk } from "./ask.js";
 import { mountCombobox } from "./combobox.js";
 import { mountJournal } from "./journal.js";
 import { emptyMacros, formatGrams, formatKcal, sumMacros } from "./macros.js";
-import { renderMeal } from "./meals.js";
+import { renderMeal, withServings } from "./meals.js";
 import { watchChanges } from "./sync.js";
 import { paceMeter } from "./pace.js";
 import { eatingDayFraction, formatDay, formatTime, localDayRange } from "./time.js";
@@ -196,10 +197,30 @@ window.setInterval(() => {
   if (!nodes.pace.hidden) paintRecommendation(eatenKcal());
 }, 60_000);
 
+const openMealIds = new Set<string>();
+const servingFlight = new Set<string>();
+const servingTarget = new Map<string, number>();
+
 function paintList(): void {
   nodes.mealsEl.replaceChildren();
   for (const meal of meals) {
-    nodes.mealsEl.append(renderMeal(meal, handleDelete));
+    nodes.mealsEl.append(
+      renderMeal(
+        meal,
+        handleDelete,
+        (current, servings) => {
+          void handleServings(current, servings);
+        },
+        openMealIds.has(meal.id),
+        (open) => {
+          if (open) {
+            openMealIds.add(meal.id);
+          } else {
+            openMealIds.delete(meal.id);
+          }
+        },
+      ),
+    );
   }
   const empty = meals.length === 0;
   nodes.emptyEl.hidden = !empty;
@@ -228,6 +249,38 @@ function setBusy(busy: boolean): void {
 }
 
 let finishMealDelete: (() => void) | undefined;
+
+async function handleServings(meal: Meal, servings: number): Promise<void> {
+  servingTarget.set(meal.id, servings);
+  meals = meals.map((item) => (item.id === meal.id ? withServings(item, servings) : item));
+  paintList();
+  if (servingFlight.has(meal.id)) {
+    return;
+  }
+  servingFlight.add(meal.id);
+  try {
+    while (servingTarget.has(meal.id)) {
+      const target = servingTarget.get(meal.id);
+      servingTarget.delete(meal.id);
+      if (target === undefined || !meals.some((item) => item.id === meal.id)) {
+        continue;
+      }
+      const updated = await setMealServings(meal.id, target);
+      if (servingTarget.has(meal.id) || !meals.some((item) => item.id === meal.id)) {
+        continue;
+      }
+      meals = meals.map((item) => (item.id === meal.id ? updated : item));
+      paintList();
+    }
+    void refreshEnergy();
+  } catch (error) {
+    servingTarget.delete(meal.id);
+    setError(error instanceof Error ? error.message : "Couldn't update that meal.");
+    reloadFood();
+  } finally {
+    servingFlight.delete(meal.id);
+  }
+}
 
 function handleDelete(meal: Meal, row: HTMLLIElement): void {
   const index = meals.findIndex((item) => item.id === meal.id);

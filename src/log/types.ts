@@ -45,6 +45,8 @@ export interface FoodLogEntry extends FoodLogResolution {
   eatenAt: Date;
   query: string;
   createdAt: Date;
+  /** How many times the logged portion was eaten. Omitted means one. */
+  servings?: number;
 }
 
 export interface ParsedFoodItem {
@@ -99,6 +101,7 @@ export interface FoodStore {
   insert(entry: Omit<FoodLogEntry, "_id">): Promise<FoodLogEntry>;
   listByEatenAt(from: Date, to: Date): Promise<FoodLogEntry[]>;
   deleteById(id: string): Promise<boolean>;
+  setServings(id: string, servings: number): Promise<FoodLogEntry | null>;
 }
 
 export type FoodLogProgress = (message: string) => void | Promise<void>;

@@ -1,6 +1,8 @@
 import type { Meal, MealItem } from "./api.js";
-import { formatGrams, formatKcal, formatMacroLine } from "./macros.js";
+import { formatGrams, formatKcal, formatMacroLine, scaleMacros } from "./macros.js";
 import { formatTime } from "./time.js";
+
+export const MAX_SERVINGS = 24;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -24,12 +26,51 @@ function svgEl<K extends keyof SVGElementTagNameMap>(
   return el;
 }
 
-function detailsIcon(): SVGSVGElement {
+function trashIcon(): SVGSVGElement {
   return svgIcon([
-    svgEl("circle", { cx: "12", cy: "12", r: "10" }),
-    svgEl("path", { d: "M12 16v-4" }),
-    svgEl("path", { d: "M12 8h.01" }),
+    svgEl("path", { d: "M3 6h18" }),
+    svgEl("path", { d: "M8 6V4h8v2" }),
+    svgEl("path", { d: "M19 6l-1 14H6L5 6" }),
+    svgEl("path", { d: "M10 11v6" }),
+    svgEl("path", { d: "M14 11v6" }),
   ]);
+}
+
+function mealTitle(meal: Meal): string {
+  if (meal.items.length > 0) {
+    return meal.items.map((item) => item.name).join(" and ");
+  }
+  return stripPortions(meal.description);
+}
+
+function stripPortions(text: string): string {
+  let current = text;
+  let next = current.replace(/\s*\([^()]*\)/g, "");
+  while (next !== current) {
+    current = next;
+    next = current.replace(/\s*\([^()]*\)/g, "");
+  }
+  const trimmed = current.replace(/\s+/g, " ").trim();
+  return trimmed === "" ? text : trimmed;
+}
+
+export function withServings(meal: Meal, servings: number): Meal {
+  const current = meal.servings && meal.servings > 0 ? meal.servings : 1;
+  if (servings === current) {
+    return { ...meal, servings };
+  }
+  const factor = servings / current;
+  return {
+    ...meal,
+    servings,
+    macros: scaleMacros(meal.macros, factor),
+    ...(meal.adjusted ? { adjusted: scaleMacros(meal.adjusted, factor) } : {}),
+    items: meal.items.map((item) => ({
+      ...item,
+      grams: Math.round(item.grams * factor * 10) / 10,
+      macros: scaleMacros(item.macros, factor),
+    })),
+  };
 }
 
 function itemRow(item: MealItem): HTMLLIElement {
@@ -38,7 +79,7 @@ function itemRow(item: MealItem): HTMLLIElement {
 
   const title = document.createElement("p");
   title.className = "meal-item-title";
-  title.textContent = `${item.name} · ${item.servingDescription} · ${formatGrams(item.grams)} g`;
+  title.textContent = `${item.name} · ${formatGrams(item.grams)} g`;
 
   const source = document.createElement("p");
   source.className = "muted";
@@ -46,19 +87,19 @@ function itemRow(item: MealItem): HTMLLIElement {
 
   const macros = document.createElement("p");
   macros.className = "meal-item-macros";
-  macros.textContent = formatMacroLine(item.macros);
+  macros.textContent = formatMacroLine(item.correction ? scaleMacros(item.macros, item.correction.factor) : item.macros);
 
   li.append(title, source, macros);
-  if (item.correction) {
-    const factor = document.createElement("p");
-    factor.className = "muted meal-factor";
-    factor.textContent = `× ${item.correction.factor.toFixed(2)} · ${item.correction.label}`;
-    li.append(factor);
-  }
   return li;
 }
 
-export function renderMeal(meal: Meal, onDelete: (meal: Meal, row: HTMLLIElement) => void): HTMLLIElement {
+export function renderMeal(
+  meal: Meal,
+  onDelete: (meal: Meal, row: HTMLLIElement) => void,
+  onServings: (meal: Meal, servings: number) => void,
+  expanded: boolean,
+  onToggle: (open: boolean) => void,
+): HTMLLIElement {
   const row = document.createElement("li");
   row.className = "meal-row";
   row.dataset.id = meal.id;
@@ -66,56 +107,88 @@ export function renderMeal(meal: Meal, onDelete: (meal: Meal, row: HTMLLIElement
   const article = document.createElement("article");
   article.className = "meal";
 
-  const top = document.createElement("div");
-  top.className = "meal-top";
+  const titleText = mealTitle(meal);
+  const when = formatTime(meal.eatenAt);
+  const count = meal.servings && meal.servings > 0 ? meal.servings : 1;
+  const shownKcal = meal.adjusted?.caloriesKcal ?? meal.macros.caloriesKcal;
 
-  const time = document.createElement("time");
-  time.dateTime = meal.eatenAt;
-  time.textContent = formatTime(meal.eatenAt);
-
-  const end = document.createElement("div");
-  end.className = "meal-end";
+  const head = document.createElement("div");
+  head.className = "log-head";
 
   const extraId = `meal-extra-${meal.id}`;
-  const details = document.createElement("details");
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "log-open";
+  open.setAttribute("aria-expanded", String(expanded));
+  open.setAttribute("aria-controls", extraId);
+
+  const title = document.createElement("span");
+  title.className = "log-title";
+  title.textContent = titleText;
+
+  const kcal = document.createElement("span");
+  kcal.className = "log-value";
+  kcal.textContent = formatKcal(shownKcal);
+  const unit = document.createElement("span");
+  unit.className = "visually-hidden";
+  unit.textContent = " calories";
+  open.append(title, kcal, unit);
+
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "icon-button delete log-delete";
+  del.setAttribute("aria-label", `Delete ${when} ${titleText}`);
+  del.append(trashIcon());
+  del.addEventListener("click", () => {
+    onDelete(meal, row);
+  });
+  head.append(open, del);
+
+  const meta = document.createElement("div");
+  meta.className = "log-meta";
+  const time = document.createElement("time");
+  time.dateTime = meal.eatenAt;
+  time.textContent = when;
+
+  const stepper = document.createElement("div");
+  stepper.className = "stepper";
+  stepper.setAttribute("role", "group");
+  stepper.setAttribute("aria-label", "Servings");
+
+  const fewer = document.createElement("button");
+  fewer.type = "button";
+  fewer.setAttribute("aria-label", `Fewer servings of ${titleText}`);
+  fewer.textContent = "−";
+  fewer.disabled = count <= 1;
+
+  const amount = document.createElement("span");
+  amount.textContent = String(count);
+
+  const more = document.createElement("button");
+  more.type = "button";
+  more.setAttribute("aria-label", `More servings of ${titleText}`);
+  more.textContent = "+";
+  more.disabled = count >= MAX_SERVINGS;
+
+  fewer.addEventListener("click", () => {
+    onServings(meal, count - 1);
+  });
+  more.addEventListener("click", () => {
+    onServings(meal, count + 1);
+  });
+  stepper.append(fewer, amount, more);
+  meta.append(time, stepper);
+
+  const details = document.createElement("div");
   details.className = "meal-extra";
   details.id = extraId;
-
-  const summary = document.createElement("summary");
-  summary.className = "visually-hidden";
-  summary.tabIndex = -1;
-  summary.textContent = `Details for ${meal.description}`;
-
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "icon-button";
-  toggle.setAttribute("aria-label", `Details for ${meal.description}`);
-  toggle.setAttribute("aria-expanded", "false");
-  toggle.setAttribute("aria-controls", extraId);
-  toggle.append(detailsIcon());
-  const syncExpanded = (): void => {
-    toggle.setAttribute("aria-expanded", String(details.open));
-  };
-  toggle.addEventListener("click", () => {
-    details.open = !details.open;
-    syncExpanded();
-  });
-  details.addEventListener("toggle", syncExpanded);
-
-  details.append(summary);
-  if (meal.query.trim().toLowerCase() !== meal.description.trim().toLowerCase()) {
+  details.hidden = !expanded;
+  if (meal.query.trim().toLowerCase() !== titleText.trim().toLowerCase()) {
     const query = document.createElement("p");
     query.className = "muted meal-query";
     query.textContent = `Logged as “${meal.query}”`;
     details.append(query);
   }
-  if (meal.adjusted) {
-    const logged = document.createElement("p");
-    logged.className = "muted meal-logged";
-    logged.textContent = `Logged ${formatMacroLine(meal.macros)}`;
-    details.append(logged);
-  }
-
   const items = document.createElement("ul");
   items.className = "meal-items";
   for (const item of meal.items) {
@@ -123,34 +196,14 @@ export function renderMeal(meal: Meal, onDelete: (meal: Meal, row: HTMLLIElement
   }
   details.append(items);
 
-  const when = formatTime(meal.eatenAt);
-  const del = document.createElement("button");
-  del.type = "button";
-  del.className = "text-delete";
-  del.textContent = `Delete ${when}`;
-  del.setAttribute("aria-label", `Delete ${when} ${meal.description}`);
-  del.addEventListener("click", () => {
-    onDelete(meal, row);
+  open.addEventListener("click", () => {
+    const next = details.hidden;
+    details.hidden = !next;
+    open.setAttribute("aria-expanded", String(next));
+    onToggle(next);
   });
 
-  const shownKcal = meal.adjusted?.caloriesKcal ?? meal.macros.caloriesKcal;
-  const adjusted =
-    meal.adjusted !== undefined &&
-    Math.round(meal.adjusted.caloriesKcal) !== Math.round(meal.macros.caloriesKcal);
-  const kcal = document.createElement("p");
-  kcal.className = "meal-kcal";
-  kcal.textContent = adjusted
-    ? `${formatKcal(shownKcal)} kcal, adjusted`
-    : `${formatKcal(shownKcal)} kcal`;
-
-  end.append(toggle, kcal);
-  top.append(time, end);
-
-  const title = document.createElement("h3");
-  title.className = "meal-title";
-  title.textContent = meal.description;
-
-  article.append(top, title, del, details);
+  article.append(head, meta, details);
   row.append(article);
   return row;
 }

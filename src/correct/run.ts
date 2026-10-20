@@ -3,6 +3,7 @@ import { withMlflowSpan } from "../mlflow/tracing.js";
 import { readBodyProfile } from "../energy/profile.js";
 import type { Journal } from "../journal/journal.js";
 import type { FoodLogger } from "../log/logger.js";
+import { scaleItem, servingsOf } from "../log/servings.js";
 import { buildEnergyWindows } from "./windows.js";
 import { fitEnergyWindows, type CorrectionFit } from "./fit.js";
 import { openCorrectionStore, type CorrectionStore, type StoredCorrection } from "./store.js";
@@ -150,13 +151,16 @@ export async function loadHistory(logger: FoodLogger, journal: Journal, now = ne
   return {
     meals: meals.map((meal) => ({
       eatenAt: meal.eatenAt,
-      items: meal.items.map((item) => ({
-        name: item.name,
-        dataType: item.dataType,
-        grams: item.grams,
-        servingDescription: item.servingDescription,
-        macros: item.macros,
-      })),
+      items: meal.items.map((item) => {
+        const eaten = scaleItem(item, servingsOf(meal));
+        return {
+          name: eaten.name,
+          dataType: eaten.dataType,
+          grams: eaten.grams,
+          servingDescription: eaten.servingDescription,
+          macros: eaten.macros,
+        };
+      }),
     })),
     observations: observations.map((view) => toWeightObservation(view)),
   };

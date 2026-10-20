@@ -2,7 +2,8 @@ import { correctionFor, correctedMacros, type CorrectionFit, type ItemCorrection
 import type { Category } from "../correct/types.js";
 import type { JournalKindView, JournalObservationView } from "../journal/journal.js";
 import type { JournalField } from "../journal/types.js";
-import { sumMacros } from "../log/nutrients.js";
+import { scaleMacros, sumMacros } from "../log/nutrients.js";
+import { scaleItem, servingsOf } from "../log/servings.js";
 import type { FoodLogEntry, FoodLogItem, FoodLogMacros } from "../log/types.js";
 
 const CATEGORY_LABEL: Record<Category, string> = {
@@ -29,29 +30,35 @@ export interface MealJson {
   createdAt: string;
   query: string;
   description: string;
+  servings: number;
   macros: FoodLogMacros;
   adjusted?: FoodLogMacros;
   items: MealItemJson[];
 }
 
 export function serializeMeal(entry: FoodLogEntry, fit?: CorrectionFit | null): MealJson {
+  const factor = servingsOf(entry);
   const meal: MealJson = {
     id: entry._id.toHexString(),
     eatenAt: entry.eatenAt.toISOString(),
     createdAt: entry.createdAt.toISOString(),
     query: entry.query,
     description: entry.description,
-    macros: entry.macros,
-    items: entry.items,
+    servings: factor,
+    macros: scaleMacros(entry.macros, factor),
+    items: entry.items.map((item) => scaleItem(item, factor)),
   };
   if (!fit) {
     return meal;
   }
   meal.items = entry.items.map((item) => {
     const correction = correctionFor(fit, item);
-    return { ...item, correction: { factor: correction.factor, label: correctionLabel(correction) } };
+    return {
+      ...scaleItem(item, factor),
+      correction: { factor: correction.factor, label: correctionLabel(correction) },
+    };
   });
-  meal.adjusted = sumMacros(entry.items.map((item) => correctedMacros(item, fit)));
+  meal.adjusted = scaleMacros(sumMacros(entry.items.map((item) => correctedMacros(item, fit))), factor);
   return meal;
 }
 

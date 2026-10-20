@@ -10,6 +10,7 @@ import { FoodLogAiError, FoodLogConfigError, FoodLogMatchError } from "../log/er
 import type { FoodLogger } from "../log/logger.js";
 import type { FoodLogEntry } from "../log/types.js";
 import { sumMacros } from "../log/nutrients.js";
+import { eatenMacros, MAX_SERVINGS } from "../log/servings.js";
 import { parseIsoDate, serializeKind, serializeMeal, serializeObservation, type MealJson } from "./serialize.js";
 import type { DataCatalog } from "../mcp/catalog.js";
 import { handleMcpRequest } from "../mcp/http.js";
@@ -146,7 +147,7 @@ export function createApp({
     const fit = corrections ? await corrections.current() : null;
     return c.json({
       meals: meals.map((meal) => serializeMeal(meal, fit)),
-      totals: sumMacros(meals.map((meal) => meal.macros)),
+      totals: sumMacros(meals.map((meal) => eatenMacros(meal))),
       ...(corrections?.pending() ? { correctionPending: true } : {}),
     });
   });
@@ -204,6 +205,26 @@ export function createApp({
     });
   });
 
+  app.patch("/api/meals/:id", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: { message: "Servings must be a whole number." } }, 400);
+    }
+    const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    const servings = record.servings;
+    if (typeof servings !== "number" || !Number.isInteger(servings) || servings < 1 || servings > MAX_SERVINGS) {
+      return c.json({ error: { message: `Servings must be a whole number from 1 to ${MAX_SERVINGS}.` } }, 400);
+    }
+    const entry = await logger.setServings(c.req.param("id"), servings);
+    if (!entry) {
+      return c.json({ error: { message: "That meal is no longer in the log." } }, 404);
+    }
+    publish("food");
+    return c.json(await presentMeal(entry));
+  });
+
   app.delete("/api/meals/:id", async (c) => {
     const deleted = await logger.delete(c.req.param("id"));
     if (!deleted) {
@@ -232,7 +253,7 @@ export function createApp({
       recommendDay({
         profile: readBodyProfile(env, today),
         today,
-        intakes: meals.map((meal) => ({ eatenAt: meal.eatenAt, kcal: meal.macros.caloriesKcal })),
+        intakes: meals.map((meal) => ({ eatenAt: meal.eatenAt, kcal: eatenMacros(meal).caloriesKcal })),
         observations: observations.map((view) => ({
           at: view.observation.at,
           kindLabel: view.kind.label,

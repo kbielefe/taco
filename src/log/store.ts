@@ -36,6 +36,19 @@ export class MemoryFoodStore implements FoodStore {
     this.entries.splice(index, 1);
     return true;
   }
+
+  async setServings(id: string, servings: number): Promise<FoodLogEntry | null> {
+    const entry = this.entries.find((item) => item._id.toString() === id);
+    if (!entry) {
+      return null;
+    }
+    if (servings === 1) {
+      delete entry.servings;
+    } else {
+      entry.servings = servings;
+    }
+    return entry;
+  }
 }
 
 export class MongoFoodStore implements FoodStore {
@@ -87,6 +100,24 @@ export class MongoFoodStore implements FoodStore {
         return result.deletedCount === 1;
       },
       (deleted) => ({ deleted }),
+    );
+  }
+
+  async setServings(id: string, servings: number): Promise<FoodLogEntry | null> {
+    return withToolSpan(
+      "mongo food.setServings",
+      { collection: this.collection.collectionName, id, servings },
+      async () => {
+        if (!OBJECT_ID.test(id)) {
+          return null;
+        }
+        return this.collection.findOneAndUpdate(
+          { _id: new ObjectId(id) },
+          servings === 1 ? { $unset: { servings: "" } } : { $set: { servings } },
+          { returnDocument: "after" },
+        );
+      },
+      (stored) => ({ found: stored !== null }),
     );
   }
 }
