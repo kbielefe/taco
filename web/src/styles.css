@@ -269,14 +269,22 @@ body::before {
   transform: translateX(-50%);
 }
 
-.kcal-target-row {
+.macro-why {
   display: flex;
-  align-items: flex-start;
-  gap: 0.1rem;
-  margin-top: 0.35rem;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 2.75rem;
 }
 
-.kcal-target-row:not(:has(:not([hidden]))) {
+.macro-why:has(#calorie-why[hidden]) {
+  display: none;
+}
+
+.macro-follow {
+  margin: 0.35rem 0 0.75rem;
+}
+
+.macro-follow:not(:has(:not([hidden]))) {
   display: none;
 }
 
@@ -306,7 +314,7 @@ body::before {
 }
 
 #view-food > .macro-row {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
   gap: 0.35rem;
 }
 
@@ -911,8 +919,9 @@ body::before {
   }
 
   #view-food > .macro-row .macro-label {
-    font-size: 0.58rem;
+    font-size: 0.56rem;
     letter-spacing: 0;
+    text-transform: none;
     white-space: nowrap;
   }
 
