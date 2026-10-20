@@ -14,7 +14,8 @@ import { mountJournal } from "./journal.js";
 import { emptyMacros, formatGrams, formatKcal, sumMacros } from "./macros.js";
 import { renderMeal } from "./meals.js";
 import { watchChanges } from "./sync.js";
-import { formatDay, localDayRange } from "./time.js";
+import { paceMeter } from "./pace.js";
+import { eatingDayFraction, formatDay, localDayRange } from "./time.js";
 import "./styles.css";
 
 function required<T extends Element>(value: T | null, name: string): T {
@@ -39,6 +40,12 @@ const nodes = {
   calorieTarget: required(document.querySelector<HTMLParagraphElement>("#calorie-target"), "calorie-target"),
   calorieWhy: required(document.querySelector<HTMLButtonElement>("#calorie-why"), "calorie-why"),
   calorieNote: required(document.querySelector<HTMLParagraphElement>("#calorie-target-note"), "calorie-target-note"),
+  pace: required(document.querySelector<HTMLElement>("#pace"), "pace"),
+  paceDay: required(document.querySelector<HTMLElement>("#pace-day"), "pace-day"),
+  paceRange: required(document.querySelector<HTMLElement>("#pace-range"), "pace-range"),
+  paceMarkNow: required(document.querySelector<HTMLElement>("#pace-mark-now"), "pace-mark-now"),
+  paceMarkDay: required(document.querySelector<HTMLElement>("#pace-mark-day"), "pace-mark-day"),
+  paceScale: required(document.querySelector<HTMLElement>("#pace-scale"), "pace-scale"),
   form: required(document.querySelector<HTMLFormElement>("#log-form"), "log-form"),
   input: required(document.querySelector<HTMLInputElement>("#meal"), "meal"),
   listbox: required(document.querySelector<HTMLUListElement>("#suggestions"), "suggestions"),
@@ -75,14 +82,16 @@ function paintTotals(macros: Macros): void {
   paintRecommendation(macros.caloriesKcal);
 }
 
-function paintRecommendation(eatenKcal: number): void {
+function paintRecommendation(eaten: number): void {
   if (recommendationProblem) {
+    hidePace();
     nodes.calorieTarget.hidden = true;
     nodes.calorieTarget.textContent = "";
     setRecommendationReason(recommendationProblem, true);
     return;
   }
   if (!recommendation) {
+    hidePace();
     nodes.calorieTarget.hidden = true;
     setRecommendationReason("", false);
     return;
@@ -90,13 +99,69 @@ function paintRecommendation(eatenKcal: number): void {
   const minKcal = recommendation.minKcal ?? recommendation.kcal;
   const maxKcal = recommendation.maxKcal ?? recommendation.kcal;
   if (minKcal === null || maxKcal === null) {
+    hidePace();
     nodes.calorieTarget.hidden = true;
     nodes.calorieTarget.textContent = "";
     setRecommendationReason(recommendation.message, true);
-  } else {
-    nodes.calorieTarget.hidden = false;
-    nodes.calorieTarget.textContent = recommendationLine(minKcal, maxKcal, eatenKcal);
-    setRecommendationReason(recommendation.message, false);
+    return;
+  }
+  paintPace(eaten, minKcal, maxKcal);
+  const over = eaten > maxKcal;
+  nodes.calorieTarget.hidden = !over;
+  nodes.calorieTarget.textContent = over ? `${formatKcal(eaten - maxKcal)} over` : "";
+  setRecommendationReason(recommendation.message, false);
+}
+
+function hidePace(): void {
+  nodes.pace.hidden = true;
+  nodes.pace.removeAttribute("aria-label");
+}
+
+function paintPace(eaten: number, minKcal: number, maxKcal: number): void {
+  const dayFraction = eatingDayFraction();
+  const meter = paceMeter({ eaten, minKcal, maxKcal, dayFraction });
+  const dayPercent = Math.round(dayFraction * 100);
+  nodes.pace.hidden = false;
+  nodes.paceDay.textContent = `${dayPercent}% of the day`;
+  placeRange(meter.rangeStart, meter.rangeEnd);
+  placeMark(nodes.paceMarkNow, meter.now);
+  placeMark(nodes.paceMarkDay, meter.day);
+  paintScale(minKcal, maxKcal, meter.rangeStart, meter.rangeEnd);
+  const range = minKcal === maxKcal ? `${formatKcal(maxKcal)} kcal` : `${formatKcal(minKcal)} to ${formatKcal(maxKcal)} kcal`;
+  const over = eaten > maxKcal ? ` ${formatKcal(eaten - maxKcal)} over the top.` : "";
+  nodes.pace.setAttribute(
+    "aria-label",
+    `${formatKcal(eaten)} kcal. Recommended ${range}. ${dayPercent}% of the day has passed, from 8:30 AM to 10:00 PM.${over}`,
+  );
+}
+
+function placeRange(start: number, end: number): void {
+  const point = end - start < 0.004;
+  nodes.paceRange.classList.toggle("is-point", point);
+  nodes.paceRange.style.left = `${start * 100}%`;
+  nodes.paceRange.style.width = point ? "2px" : `${(end - start) * 100}%`;
+}
+
+function placeMark(mark: HTMLElement, fraction: number): void {
+  mark.style.left = `${fraction * 100}%`;
+}
+
+function paintScale(minKcal: number, maxKcal: number, start: number, end: number): void {
+  const label = (text: string, at: number): HTMLSpanElement => {
+    const el = document.createElement("span");
+    el.textContent = text;
+    el.style.left = `${at * 100}%`;
+    return el;
+  };
+  if (minKcal === maxKcal) {
+    nodes.paceScale.replaceChildren(label(formatKcal(maxKcal), end));
+    return;
+  }
+  const minLabel = label(formatKcal(minKcal), start);
+  const maxLabel = label(formatKcal(maxKcal), end);
+  nodes.paceScale.replaceChildren(minLabel, maxLabel);
+  if (minLabel.getBoundingClientRect().right > maxLabel.getBoundingClientRect().left - 8) {
+    nodes.paceScale.replaceChildren(label(`${formatKcal(minKcal)}–${formatKcal(maxKcal)}`, end));
   }
 }
 
@@ -126,20 +191,9 @@ nodes.calorieWhy.addEventListener("click", () => {
   nodes.calorieNote.hidden = expanded || nodes.calorieNote.textContent === "";
 });
 
-function recommendationLine(minKcal: number, maxKcal: number, eaten: number): string {
-  const range =
-    minKcal === maxKcal ? formatKcal(maxKcal) : `${formatKcal(minKcal)} to ${formatKcal(maxKcal)}`;
-  if (eaten <= 0) {
-    return `Recommended ${range} kcal`;
-  }
-  if (eaten > maxKcal) {
-    return `Recommended ${range} kcal · ${formatKcal(eaten - maxKcal)} over`;
-  }
-  if (minKcal !== maxKcal && eaten < minKcal) {
-    return `Recommended ${range} kcal · ${formatKcal(minKcal - eaten)} to ${formatKcal(maxKcal - eaten)} left`;
-  }
-  return `Recommended ${range} kcal · ${formatKcal(maxKcal - eaten)} left`;
-}
+window.setInterval(() => {
+  if (!nodes.pace.hidden) paintRecommendation(eatenKcal());
+}, 60_000);
 
 function paintList(): void {
   nodes.mealsEl.replaceChildren();

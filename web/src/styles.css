@@ -155,20 +155,118 @@ body::before {
   padding-bottom: 1rem;
 }
 
-.kcal-hero {
-  margin: 0;
-  font-size: clamp(2rem, 1.5rem + 2vw, 2.75rem);
+#journal-summary-heading {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
   font-weight: 650;
-  letter-spacing: -0.04em;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
 }
 
-.kcal-unit {
-  font-size: 0.45em;
-  font-weight: 550;
+.pace {
+  margin: 0.35rem 0 0;
+}
+
+.pace-key {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0;
   color: var(--muted);
-  letter-spacing: 0;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pace-scale {
+  position: relative;
+  height: 1.1rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pace-scale span {
+  position: absolute;
+  top: 0;
+  white-space: nowrap;
+  transform: translateX(-100%);
+}
+
+.pace-now,
+.pace-day {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.pace-now i,
+.pace-day i {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  flex: none;
+}
+
+.pace-now i {
+  background: var(--accent);
+}
+
+.pace-day i {
+  border: 1.5px solid var(--fg);
+}
+
+.pace-track {
+  position: relative;
+  height: 0.55rem;
+  margin: 1.15rem 0 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+}
+
+.pace-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 72%, transparent);
+}
+
+.pace-range.is-point {
+  width: 2px;
+  background: var(--accent);
+}
+
+.pace-mark {
+  position: absolute;
+  top: 50%;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.pace-mark-now {
+  background: var(--accent);
+  border: 2px solid var(--surface);
+}
+
+.pace-mark-day {
+  top: -0.35rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  background: var(--surface);
+  border: 1.5px solid var(--fg);
+  transform: translate(-50%, -100%);
+}
+
+.pace-mark-day::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 1px;
+  height: 0.45rem;
+  background: var(--fg);
+  transform: translateX(-50%);
 }
 
 .kcal-target-row {
@@ -205,6 +303,11 @@ body::before {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 6.5rem), 1fr));
   gap: 0.5rem;
+}
+
+#view-food > .macro-row {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.35rem;
 }
 
 .macro {
@@ -246,7 +349,7 @@ body::before {
 }
 
 .composer {
-  margin: 0.5rem 0 0;
+  margin: 0;
 }
 
 .field label {
@@ -506,18 +609,6 @@ body::before {
 
 .icon-button[aria-expanded="true"] {
   color: var(--accent);
-}
-
-.icon-button.kcal-why {
-  width: 1.75rem;
-  height: 1.75rem;
-  margin-top: 0.05rem;
-  border-radius: 999px;
-}
-
-.icon-button.kcal-why svg {
-  width: 1rem;
-  height: 1rem;
 }
 
 .delete:hover,
@@ -800,9 +891,8 @@ body::before {
   font-weight: 650;
 }
 
-/* Phone column, including portrait at about 140% zoom: calories and the
-   composer lead. Macros and the diary follow. A short landscape window
-   uses the same order so Log stays in reach. */
+/* Phone column, including portrait at about 140% zoom. The meal field
+   leads. The scale and the nutrient row follow. */
 @container page (max-width: 24rem) {
   #view-food:not([hidden]),
   #view-journal:not([hidden]) {
@@ -810,15 +900,25 @@ body::before {
     flex-direction: column;
   }
 
-  #view-food > .composer {
-    order: 2;
-    margin-top: 0.75rem;
+  #view-food > .macro-row {
+    margin: 0.85rem -0.85rem 0;
+    gap: 0.15rem;
   }
 
-  #view-food > .macro-row {
-    order: 3;
-    margin: 0.85rem 0 0;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  #view-food > .macro-row .macro {
+    min-height: 0;
+    min-width: 0;
+  }
+
+  #view-food > .macro-row .macro-label {
+    font-size: 0.58rem;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+
+  #view-food > .macro-row .macro-value {
+    font-size: 0.8rem;
+    white-space: nowrap;
   }
 
   #view-food > .diary {
@@ -872,10 +972,6 @@ body::before {
     padding-top: 0.15rem;
   }
 
-  .kcal-hero {
-    font-size: 1.55rem;
-  }
-
   .hint {
     margin-bottom: 0.25rem;
   }
@@ -886,19 +982,8 @@ body::before {
     flex-direction: column;
   }
 
-  #view-food > .composer {
-    order: 2;
-    margin-top: 0.35rem;
-  }
-
   #view-food > .macro-row {
-    order: 3;
-    margin: 0.85rem 0 0;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  #view-food > .diary {
-    order: 4;
+    margin: 0.5rem 0 0;
   }
 
   #view-journal > .composer {

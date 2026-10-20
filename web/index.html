@@ -18,52 +18,6 @@
       </header>
 
       <div id="view-food">
-        <section class="totals" aria-labelledby="totals-heading">
-          <h2 id="totals-heading" class="visually-hidden">Today’s totals</h2>
-          <p class="kcal-hero">
-            <span id="total-kcal">0</span>
-            <span class="kcal-unit">kcal</span>
-          </p>
-          <div class="kcal-target-row">
-            <p class="kcal-target" id="calorie-target" hidden></p>
-            <button
-              type="button"
-              class="icon-button kcal-why"
-              id="calorie-why"
-              hidden
-              aria-expanded="false"
-              aria-controls="calorie-target-note"
-              aria-label="Why this recommendation"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <circle cx="12" cy="12" r="10"></circle>
-                <path d="M12 16v-4"></path>
-                <path d="M12 8h.01"></path>
-              </svg>
-            </button>
-          </div>
-          <p class="kcal-target-note" id="calorie-target-note" hidden></p>
-        </section>
-
-        <ul class="macro-row">
-          <li class="macro protein">
-            <span class="macro-label">Protein</span>
-            <span class="macro-value"><span id="total-protein">0</span>g</span>
-          </li>
-          <li class="macro fat">
-            <span class="macro-label">Fat</span>
-            <span class="macro-value"><span id="total-fat">0</span>g</span>
-          </li>
-          <li class="macro carb">
-            <span class="macro-label">Carbs</span>
-            <span class="macro-value"><span id="total-carb">0</span>g</span>
-          </li>
-          <li class="macro fiber">
-            <span class="macro-label">Fiber</span>
-            <span class="macro-value"><span id="total-fiber">0</span>g</span>
-          </li>
-        </ul>
-
         <form id="log-form" class="composer">
           <div class="field">
             <label for="meal">What did you eat?</label>
@@ -94,6 +48,66 @@
           </div>
         </form>
 
+        <section class="totals" aria-labelledby="totals-heading">
+          <h2 id="totals-heading" class="visually-hidden">Today’s totals</h2>
+          <figure class="pace" id="pace" hidden>
+            <div class="pace-picture" aria-hidden="true">
+              <p class="pace-key">
+                <span class="pace-now"><i></i> Now</span>
+                <span class="pace-day"><i></i> <span id="pace-day">0% of the day</span></span>
+              </p>
+              <div class="pace-track">
+                <div class="pace-range" id="pace-range"></div>
+                <div class="pace-mark pace-mark-day" id="pace-mark-day"></div>
+                <div class="pace-mark pace-mark-now" id="pace-mark-now"></div>
+              </div>
+              <p class="pace-scale" id="pace-scale"></p>
+            </div>
+          </figure>
+          <div class="kcal-target-row">
+            <p class="kcal-target" id="calorie-target" hidden></p>
+            <button
+              type="button"
+              class="icon-button kcal-why"
+              id="calorie-why"
+              hidden
+              aria-expanded="false"
+              aria-controls="calorie-target-note"
+              aria-label="Why this recommendation"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M12 16v-4"></path>
+                <path d="M12 8h.01"></path>
+              </svg>
+            </button>
+          </div>
+          <p class="kcal-target-note" id="calorie-target-note" hidden></p>
+        </section>
+
+        <ul class="macro-row">
+          <li class="macro">
+            <span class="macro-label">Calories</span>
+            <span class="macro-value"><span id="total-kcal">0</span></span>
+          </li>
+          <li class="macro protein">
+            <span class="macro-label">Protein</span>
+            <span class="macro-value"><span id="total-protein">0</span>g</span>
+          </li>
+          <li class="macro fat">
+            <span class="macro-label">Fat</span>
+            <span class="macro-value"><span id="total-fat">0</span>g</span>
+          </li>
+          <li class="macro carb">
+            <span class="macro-label">Carbs</span>
+            <span class="macro-value"><span id="total-carb">0</span>g</span>
+          </li>
+          <li class="macro fiber">
+            <span class="macro-label">Fiber</span>
+            <span class="macro-value"><span id="total-fiber">0</span>g</span>
+          </li>
+        </ul>
+
         <section class="diary" aria-labelledby="meals-heading">
           <h2 id="meals-heading" class="visually-hidden">Logged meals</h2>
           <p id="empty" class="empty">Nothing logged yet</p>
@@ -103,7 +117,7 @@
 
       <div id="view-journal" hidden>
         <section class="totals" id="journal-summary" hidden aria-labelledby="journal-summary-heading">
-          <h2 id="journal-summary-heading" class="visually-hidden">Today’s numbers</h2>
+          <h2 id="journal-summary-heading">Today’s numbers</h2>
           <ul id="latest-numbers" class="macro-row journal-numbers"></ul>
         </section>
 
@@ -150,7 +164,7 @@
 
       <div id="view-ask" hidden>
         <div id="ask-log" class="ask-log" role="log" aria-relevant="additions">
-          <p id="ask-empty" class="empty">Ask about a meal, a weight, or a symptom.</p>
+          <p id="ask-empty" class="empty">This conversation stays in the tab until you refresh.</p>
         </div>
         <form id="ask-form" class="composer ask-form">
           <div class="field">

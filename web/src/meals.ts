@@ -142,9 +142,15 @@ export function renderMeal(meal: Meal, onDelete: (meal: Meal, row: HTMLLIElement
     onDelete(meal, row);
   });
 
+  const shownKcal = meal.adjusted?.caloriesKcal ?? meal.macros.caloriesKcal;
+  const adjusted =
+    meal.adjusted !== undefined &&
+    Math.round(meal.adjusted.caloriesKcal) !== Math.round(meal.macros.caloriesKcal);
   const kcal = document.createElement("p");
   kcal.className = "meal-kcal";
-  kcal.textContent = `${formatKcal(meal.adjusted?.caloriesKcal ?? meal.macros.caloriesKcal)} kcal`;
+  kcal.textContent = adjusted
+    ? `${formatKcal(shownKcal)} kcal, adjusted`
+    : `${formatKcal(shownKcal)} kcal`;
 
   end.append(toggle, del, kcal);
   top.append(time, end);

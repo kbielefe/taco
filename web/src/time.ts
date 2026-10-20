@@ -16,3 +16,12 @@ export function formatTime(iso: string): string {
 export function localTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
+
+const EATING_DAY_START_MINUTES = 8 * 60 + 30;
+const EATING_DAY_END_MINUTES = 22 * 60;
+
+export function eatingDayFraction(now = new Date()): number {
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  const span = EATING_DAY_END_MINUTES - EATING_DAY_START_MINUTES;
+  return Math.min(1, Math.max(0, (minutes - EATING_DAY_START_MINUTES) / span));
+}
