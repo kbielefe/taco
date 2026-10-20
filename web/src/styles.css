@@ -87,6 +87,7 @@ body::before {
 
 .page {
   position: relative;
+  container: page / inline-size;
   width: min(40rem, calc(100% - 2 * var(--frame)));
   margin: var(--frame) auto 0;
   min-height: calc(100dvh - var(--frame));
@@ -147,7 +148,11 @@ body::before {
 }
 
 .totals {
-  padding: 0.5rem 0 1rem;
+  padding: 0.5rem 0 0;
+}
+
+#journal-summary {
+  padding-bottom: 1rem;
 }
 
 .kcal-hero {
@@ -195,7 +200,7 @@ body::before {
 
 .macro-row {
   list-style: none;
-  margin: 0.85rem 0 0;
+  margin: 0.85rem 0 1rem;
   padding: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 6.5rem), 1fr));
@@ -569,6 +574,7 @@ body::before {
 }
 
 .journal-numbers {
+  margin-bottom: 0;
   grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
 }
 
@@ -792,6 +798,126 @@ body::before {
 .ask-chart figcaption {
   margin-bottom: 0.25rem;
   font-weight: 650;
+}
+
+/* Phone column, including portrait at about 140% zoom: calories and the
+   composer lead. Macros and the diary follow. A short landscape window
+   uses the same order so Log stays in reach. */
+@container page (max-width: 24rem) {
+  #view-food:not([hidden]),
+  #view-journal:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+  }
+
+  #view-food > .composer {
+    order: 2;
+    margin-top: 0.75rem;
+  }
+
+  #view-food > .macro-row {
+    order: 3;
+    margin: 0.85rem 0 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #view-food > .diary {
+    order: 4;
+  }
+
+  #view-journal > .composer {
+    order: 1;
+    margin-top: 0;
+  }
+
+  #view-journal > #journal-summary {
+    order: 2;
+    margin-top: 0.85rem;
+  }
+
+  #view-journal > .diary {
+    order: 3;
+  }
+
+  .journal-numbers {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-height: 36rem) and (max-width: 56rem) {
+  .page {
+    margin-top: 0.15rem;
+    padding-top: 0.25rem;
+  }
+
+  .masthead {
+    margin-bottom: 0.15rem;
+  }
+
+  .date {
+    font-size: 1.35rem;
+  }
+
+  .views a,
+  #meal,
+  #kind,
+  #ask-question,
+  #log-button,
+  #journal-log,
+  #ask-button {
+    min-height: 44px;
+  }
+
+  .totals {
+    padding-top: 0.15rem;
+  }
+
+  .kcal-hero {
+    font-size: 1.55rem;
+  }
+
+  .hint {
+    margin-bottom: 0.25rem;
+  }
+
+  #view-food:not([hidden]),
+  #view-journal:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+  }
+
+  #view-food > .composer {
+    order: 2;
+    margin-top: 0.35rem;
+  }
+
+  #view-food > .macro-row {
+    order: 3;
+    margin: 0.85rem 0 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #view-food > .diary {
+    order: 4;
+  }
+
+  #view-journal > .composer {
+    order: 1;
+    margin-top: 0;
+  }
+
+  #view-journal > #journal-summary {
+    order: 2;
+    margin-top: 0.85rem;
+  }
+
+  #view-journal > .diary {
+    order: 3;
+  }
+
+  .journal-numbers {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .ask-log,

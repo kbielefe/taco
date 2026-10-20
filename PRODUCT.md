@@ -27,6 +27,8 @@ A calorie counter or a notes app does not do this combination:
 
 The owner uses a phone in portrait, often at about 140% zoom, and a desktop browser. Each sees the other's food and journal entries.
 
+The frequent jobs are logging a meal and logging a journal entry, with very little friction. The quiet column serves that. The owner rarely rereads what was logged, rarely opens Ask, and rarely reads the macros. On calories, the figure they look for is what percentage of the day's recommendation is already used.
+
 Food, Journal, and Ask show today. The browser sends local midnight. The server does not guess a time zone.
 
 Food starts from "What did you eat?" Journal starts from "What do you want to record?" A journal entry may fill any subset of that kind's fields. The first field can fill the rest from the last time that same value was used.
@@ -41,7 +43,7 @@ On Food and Journal, a photo sits only outside the content column. The column it
 
 ### Food
 
-- Nutrition comes from USDA FoodData Central. The shown nutrients are calories, protein, fat, carbohydrate, and fiber, spelled in full. Not abbreviations, and not "Carb".
+- Nutrition comes from USDA FoodData Central: calories, protein, fat, carbohydrate, and fiber. The labels are Protein, Fat, Carbs, and Fiber. Carbs is the chosen word.
 - A meal is removed and logged again. There is no in-place edit.
 - Food and Journal have no day picker. There is no installable app.
 - When a correction has been learned from weigh-ins, meal rows and today's totals show adjusted calories. The stored meal is not rewritten. The recommendation is still calculated from body size and the previous week's logged intake, not from that correction. The target starts using the correction only after a held-out week predicts weight change better than the log alone. The written rule is `docs/calorie-correction.md`.
@@ -85,7 +87,7 @@ No name, icon, or voice system is locked.
 
 The interface currently calls itself Taco. The favicon is `web/public/taco_icon.svg`. Document titles are "Taco · Food", "Taco · Journal", and "Taco · Ask". The date is the page heading. The word "Today" is not the heading.
 
-Nutrient labels stay Protein, Fat, Carbohydrate, and Fiber. That wording is locked even though the name is not.
+Nutrient labels stay Protein, Fat, Carbs, and Fiber. Carbs is locked. The product name is not.
 
 ## Evidence on Hand
 
@@ -97,7 +99,7 @@ The owner's meals, journal kinds, and observations are the content. They live in
 
 ## Product Principles
 
-1. Trust the same day. A meal shows USDA amounts the owner can check, in full nutrient names.
+1. Trust the same day. A meal shows USDA amounts the owner can check. The labels are Protein, Fat, Carbs, and Fiber.
 2. One person, in private. One Google account. No shared password and no public signup.
 3. Recording stays quick on a phone, including at about 140% zoom.
 4. The calorie range protects the pace. About 2 lb a week at a BMI of 25 or higher, maintenance below that, and a low day does not push the next day too low.
