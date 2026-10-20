@@ -15,7 +15,8 @@ import { emptyMacros, formatGrams, formatKcal, sumMacros } from "./macros.js";
 import { renderMeal } from "./meals.js";
 import { watchChanges } from "./sync.js";
 import { paceMeter } from "./pace.js";
-import { eatingDayFraction, formatDay, localDayRange } from "./time.js";
+import { eatingDayFraction, formatDay, formatTime, localDayRange } from "./time.js";
+import { confirmDelete } from "./undo.js";
 import "./styles.css";
 
 function required<T extends Element>(value: T | null, name: string): T {
@@ -226,26 +227,36 @@ function setBusy(busy: boolean): void {
   nodes.statusEl.textContent = busy ? "Looking up nutrition…" : "";
 }
 
-async function handleDelete(meal: Meal, row: HTMLLIElement): Promise<void> {
+let finishMealDelete: (() => void) | undefined;
+
+function handleDelete(meal: Meal, row: HTMLLIElement): void {
   const index = meals.findIndex((item) => item.id === meal.id);
   if (index === -1) {
     return;
   }
+  finishMealDelete?.();
   const snapshot = meals.slice();
   meals = meals.filter((item) => item.id !== meal.id);
-  row.remove();
-  const empty = meals.length === 0;
-  nodes.emptyEl.hidden = !empty;
-  nodes.mealsEl.hidden = empty;
   paintTotals(sumMacros(meals.map(shownMacros)));
-  try {
-    await deleteMeal(meal.id);
-  } catch (error) {
+  const restore = (): void => {
     meals = snapshot;
     paintList();
-    setError(error instanceof Error ? error.message : "Couldn't delete that meal.");
-    nodes.input.focus();
-  }
+  };
+  finishMealDelete = confirmDelete(
+    row,
+    `Removed ${formatTime(meal.eatenAt)}.`,
+    async () => {
+      await deleteMeal(meal.id);
+      const empty = meals.length === 0;
+      nodes.emptyEl.hidden = !empty;
+      nodes.mealsEl.hidden = empty;
+    },
+    restore,
+    (error) => {
+      setError(error instanceof Error ? error.message : "Couldn't delete that meal.");
+      nodes.input.focus();
+    },
+  );
 }
 
 const combobox = mountCombobox({

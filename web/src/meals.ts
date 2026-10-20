@@ -32,16 +32,6 @@ function detailsIcon(): SVGSVGElement {
   ]);
 }
 
-function deleteIcon(): SVGSVGElement {
-  return svgIcon([
-    svgEl("path", { d: "M3 6h18" }),
-    svgEl("path", { d: "M8 6V4h8v2" }),
-    svgEl("path", { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" }),
-    svgEl("path", { d: "M10 11v6" }),
-    svgEl("path", { d: "M14 11v6" }),
-  ]);
-}
-
 function itemRow(item: MealItem): HTMLLIElement {
   const li = document.createElement("li");
   li.className = "meal-item";
@@ -133,11 +123,12 @@ export function renderMeal(meal: Meal, onDelete: (meal: Meal, row: HTMLLIElement
   }
   details.append(items);
 
+  const when = formatTime(meal.eatenAt);
   const del = document.createElement("button");
   del.type = "button";
-  del.className = "icon-button delete";
-  del.setAttribute("aria-label", `Delete ${meal.description}`);
-  del.append(deleteIcon());
+  del.className = "text-delete";
+  del.textContent = `Delete ${when}`;
+  del.setAttribute("aria-label", `Delete ${when} ${meal.description}`);
   del.addEventListener("click", () => {
     onDelete(meal, row);
   });
@@ -152,14 +143,14 @@ export function renderMeal(meal: Meal, onDelete: (meal: Meal, row: HTMLLIElement
     ? `${formatKcal(shownKcal)} kcal, adjusted`
     : `${formatKcal(shownKcal)} kcal`;
 
-  end.append(toggle, del, kcal);
+  end.append(toggle, kcal);
   top.append(time, end);
 
   const title = document.createElement("h3");
   title.className = "meal-title";
   title.textContent = meal.description;
 
-  article.append(top, title, details);
+  article.append(top, title, del, details);
   row.append(article);
   return row;
 }

@@ -15,6 +15,7 @@ import { mountStringCombobox } from "./combobox.js";
 import { recentValueKey } from "../../src/journal/recent.js";
 import { pickSuggestions } from "../../src/log/fuzzy.js";
 import { formatTime, localDayRange } from "./time.js";
+import { confirmDelete } from "./undo.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const FIELD_TYPES: { value: FieldType; label: string }[] = [
@@ -214,10 +215,6 @@ function strokeIcon(paths: string[]): SVGSVGElement {
     svg.append(path);
   }
   return svg;
-}
-
-function deleteIcon(): SVGSVGElement {
-  return strokeIcon(["M3 6h18", "M8 6V4h8v2", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", "M10 11v6", "M14 11v6"]);
 }
 
 function pencilIcon(): SVGSVGElement {
@@ -1045,35 +1042,45 @@ export function mountJournal(): { load: () => Promise<void> } {
     time.textContent = formatTime(entry.at);
     const title = el("h3", "meal-title", entry.kind.label);
     const end = el("div", "meal-end single");
-    const del = el("button", "icon-button delete");
+    const when = formatTime(entry.at);
+    const del = el("button", "text-delete", `Delete ${when}`);
     del.type = "button";
-    del.setAttribute("aria-label", `Delete ${entry.kind.label}`);
-    del.append(deleteIcon());
+    del.setAttribute("aria-label", `Delete ${when} ${entry.kind.label}`);
     del.addEventListener("click", () => {
-      void removeEntry(entry, row);
+      removeEntry(entry, row);
     });
-    end.append(del, el("p", "meal-kcal", figureFor(entry)));
+    end.append(el("p", "meal-kcal", figureFor(entry)));
     top.append(time, end);
-    article.append(top, title);
+    article.append(top, title, del);
     row.append(article);
     return row;
   }
 
-  async function removeEntry(entry: JournalEntry, row: HTMLLIElement): Promise<void> {
+  let finishEntryDelete: (() => void) | undefined;
+
+  function removeEntry(entry: JournalEntry, row: HTMLLIElement): void {
+    finishEntryDelete?.();
     const snapshot = entries.slice();
     entries = entries.filter((item) => item.id !== entry.id);
-    row.remove();
-    const empty = entries.length === 0;
-    emptyEl.hidden = !empty;
-    entriesEl.hidden = empty;
     paintSummary();
-    try {
-      await deleteJournalEntry(entry.id);
-    } catch (error) {
+    const restore = (): void => {
       entries = snapshot;
       paintEntries();
-      setError(error instanceof Error ? error.message : "Couldn't delete that entry.");
-    }
+    };
+    finishEntryDelete = confirmDelete(
+      row,
+      `Removed ${formatTime(entry.at)}.`,
+      async () => {
+        await deleteJournalEntry(entry.id);
+        const empty = entries.length === 0;
+        emptyEl.hidden = !empty;
+        entriesEl.hidden = empty;
+      },
+      restore,
+      (error) => {
+        setError(error instanceof Error ? error.message : "Couldn't delete that entry.");
+      },
+    );
   }
 
   let refreshSerial = 0;

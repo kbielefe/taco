@@ -118,11 +118,6 @@
       </div>
 
       <div id="view-journal" hidden>
-        <section class="totals" id="journal-summary" hidden aria-labelledby="journal-summary-heading">
-          <h2 id="journal-summary-heading">Today’s numbers</h2>
-          <ul id="latest-numbers" class="macro-row journal-numbers"></ul>
-        </section>
-
         <form id="journal-form" class="composer">
           <div class="field">
             <label for="kind">What do you want to record?</label>
@@ -156,6 +151,11 @@
             <button type="button" id="edit-kind" class="icon-button" hidden aria-expanded="false" aria-label="Edit fields"></button>
           </div>
         </form>
+
+        <section class="totals" id="journal-summary" hidden aria-labelledby="journal-summary-heading">
+          <h2 id="journal-summary-heading">Today’s numbers</h2>
+          <ul id="latest-numbers" class="macro-row journal-numbers"></ul>
+        </section>
 
         <section class="diary" aria-labelledby="journal-heading">
           <h2 id="journal-heading" class="visually-hidden">Journal entries</h2>
