@@ -331,3 +331,12 @@ export async function fetchSuggestions(query: string): Promise<Suggestion[]> {
   const body = (await response.json()) as { suggestions: Suggestion[] };
   return body.suggestions;
 }
+
+export async function forgetSuggestion(query: string): Promise<void> {
+  const response = await fetch(`/api/suggestions?${new URLSearchParams({ q: query })}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw await readError(response);
+  }
+}

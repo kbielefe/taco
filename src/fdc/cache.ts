@@ -33,6 +33,7 @@ export interface CacheListEntry {
 export interface CacheStore {
   get<T>(key: string): Promise<T | undefined>;
   set(key: string, value: unknown, ttlMs: number, status?: number): Promise<void>;
+  delete(key: string): Promise<boolean>;
   listRecent(options?: CacheListOptions): Promise<CacheListEntry[]>;
 }
 
@@ -65,6 +66,10 @@ export class MemoryCacheStore implements CacheStore {
     const createdAt = Math.max(Date.now(), this.lastCreatedAt + 1);
     this.lastCreatedAt = createdAt;
     this.entries.set(key, { value, expiresAt: Date.now() + ttlMs, createdAt });
+  }
+
+  async delete(key: string): Promise<boolean> {
+    return this.entries.delete(key);
   }
 
   async listRecent(options: CacheListOptions = {}): Promise<CacheListEntry[]> {
@@ -135,6 +140,18 @@ export class MongoCacheStore implements CacheStore {
         await this.collection.replaceOne({ _id: key }, doc, { upsert: true });
       },
       () => ({ stored: true }),
+    );
+  }
+
+  async delete(key: string): Promise<boolean> {
+    return withToolSpan(
+      "mongo cache.delete",
+      { collection: this.collection.collectionName, source: this.source, key },
+      async () => {
+        const result = await this.collection.deleteOne({ _id: key, source: this.source });
+        return result.deletedCount === 1;
+      },
+      (deleted) => ({ deleted }),
     );
   }
 

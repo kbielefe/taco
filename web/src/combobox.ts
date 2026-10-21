@@ -1,17 +1,35 @@
 import type { Suggestion } from "./api.js";
 import { formatKcal } from "./macros.js";
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function trashIcon(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  for (const d of ["M3 6h18", "M8 6V4h8v2", "M19 6l-1 14H6L5 6", "M10 11v6", "M14 11v6"]) {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return svg;
+}
+
 export function mountCombobox(options: {
   input: HTMLInputElement;
   list: HTMLUListElement;
   fetchItems: (query: string) => Promise<Suggestion[]>;
   onSelect: (item: Suggestion) => void;
+  onForget: (item: Suggestion) => Promise<void>;
+  onForgetError?: (error: unknown) => void;
 }): { close: () => void } {
-  const { input, list, fetchItems, onSelect } = options;
+  const { input, list, fetchItems, onSelect, onForget, onForgetError } = options;
   let items: Suggestion[] = [];
   let activeIndex = -1;
   let requestId = 0;
   let debounce: ReturnType<typeof setTimeout> | undefined;
+  let forgetting = false;
 
   function close(): void {
     list.hidden = true;
@@ -63,7 +81,22 @@ export function mountCombobox(options: {
       kcal.className = "suggestion-kcal";
       kcal.textContent = `${formatKcal(item.macros.caloriesKcal)} kcal`;
 
-      option.append(query, kcal);
+      const forget = document.createElement("button");
+      forget.type = "button";
+      forget.className = "icon-button delete suggestion-forget";
+      forget.setAttribute("aria-label", `Remove ${item.query} from suggestions`);
+      forget.append(trashIcon());
+      forget.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      forget.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void forgetItem(item);
+      });
+
+      option.append(query, kcal, forget);
       option.addEventListener("mousedown", (event) => {
         event.preventDefault();
       });
@@ -75,6 +108,30 @@ export function mountCombobox(options: {
     }
     list.hidden = false;
     input.setAttribute("aria-expanded", "true");
+  }
+
+  async function forgetItem(item: Suggestion): Promise<void> {
+    if (forgetting) {
+      return;
+    }
+    forgetting = true;
+    const id = ++requestId;
+    try {
+      await onForget(item);
+      if (id !== requestId) {
+        return;
+      }
+      render(items.filter((entry) => entry.query !== item.query));
+    } catch (error) {
+      if (id === requestId) {
+        onForgetError?.(error);
+      }
+    } finally {
+      forgetting = false;
+      if (document.activeElement !== input) {
+        input.focus();
+      }
+    }
   }
 
   function blank(): boolean {
@@ -119,7 +176,7 @@ export function mountCombobox(options: {
 
   input.addEventListener("blur", () => {
     setTimeout(() => {
-      if (document.activeElement !== input) {
+      if (document.activeElement !== input && !list.contains(document.activeElement)) {
         close();
       }
     }, 0);

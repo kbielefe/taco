@@ -54,3 +54,17 @@ describe("FoodLogger.suggest", () => {
     expect(await logger.suggest("zz")).toEqual([]);
   });
 });
+
+describe("FoodLogger.forgetSuggestion", () => {
+  it("removes a cached query so it no longer suggests", async () => {
+    const cache = new MemoryCacheStore();
+    await remember(cache, "banana", "Bananas, raw");
+    await remember(cache, "Banana bread", "Bread");
+    const logger = loggerWith(cache);
+
+    expect(await logger.forgetSuggestion("banana")).toBe(true);
+    expect((await logger.suggest("ban")).map((item) => item.query)).toEqual(["Banana bread"]);
+    expect(await logger.forgetSuggestion("banana")).toBe(false);
+    expect(await logger.forgetSuggestion("   ")).toBe(false);
+  });
+});

@@ -139,6 +139,14 @@ export class FoodLogger {
     return ranked.slice(0, limit).map((item) => item.suggestion);
   }
 
+  async forgetSuggestion(query: string): Promise<boolean> {
+    const trimmed = query.trim();
+    if (trimmed === "") {
+      return false;
+    }
+    return this.queryCache.delete(queryCacheKey(trimmed));
+  }
+
   /** Database behind this logger, when it owns a Mongo client. Used by the read-only MCP endpoint. */
   healthDb(): Db | undefined {
     return this.mongo?.db(HEALTH_DB);

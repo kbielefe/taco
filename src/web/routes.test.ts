@@ -162,6 +162,23 @@ describe("food log HTTP API", () => {
     expect(body.suggestions[0]?.query).toBe("banana");
   });
 
+  it("forgets a suggestion from the query cache", async () => {
+    const { app } = testApp();
+    await app.request("/api/meals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "banana" }),
+    });
+    const deleted = await app.request("/api/suggestions?q=banana", { method: "DELETE" });
+    expect(deleted.status).toBe(204);
+    const again = await app.request("/api/suggestions?q=ban");
+    expect((await again.json()).suggestions).toEqual([]);
+    const missing = await app.request("/api/suggestions?q=banana", { method: "DELETE" });
+    expect(missing.status).toBe(404);
+    const blank = await app.request("/api/suggestions?q=", { method: "DELETE" });
+    expect(blank.status).toBe(400);
+  });
+
   it("notifies open browsers when a meal or journal entry changes", async () => {
     const topics: string[] = [];
     const sync = createSyncHub();

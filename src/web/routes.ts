@@ -239,6 +239,18 @@ export function createApp({
     return c.json({ suggestions });
   });
 
+  app.delete("/api/suggestions", async (c) => {
+    const query = c.req.query("q") ?? "";
+    if (query.trim() === "") {
+      return c.json({ error: { message: "q is required" } }, 400);
+    }
+    const deleted = await logger.forgetSuggestion(query);
+    if (!deleted) {
+      return c.body(null, 404);
+    }
+    return c.body(null, 204);
+  });
+
   app.get("/api/recommendation", async (c) => {
     const today = parseIsoDate(c.req.query("today"));
     if (!today) {

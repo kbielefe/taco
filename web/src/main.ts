@@ -4,6 +4,7 @@ import {
   setMealServings,
   fetchMeals,
   fetchSuggestions,
+  forgetSuggestion,
   logMeal,
   type EnergyRecommendation,
   type Macros,
@@ -319,6 +320,10 @@ const combobox = mountCombobox({
   onSelect: (item) => {
     nodes.input.value = item.query;
     nodes.form.requestSubmit();
+  },
+  onForget: (item) => forgetSuggestion(item.query),
+  onForgetError: (error) => {
+    setError(error instanceof Error ? error.message : "Couldn't remove that suggestion.");
   },
 });
 
