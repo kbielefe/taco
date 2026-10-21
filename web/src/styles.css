@@ -609,6 +609,7 @@ body::before {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 0.55rem;
@@ -626,17 +627,18 @@ button.log-open {
 }
 
 .log-title {
+  flex: 1 1 8rem;
   min-width: 0;
   font-size: 1.5rem;
   font-weight: 500;
   line-height: 1.15;
   letter-spacing: -0.02em;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .log-value {
-  flex: none;
-  max-width: 46%;
+  flex: 0 0 auto;
+  max-width: 100%;
   font-size: 1.28rem;
   font-weight: 650;
   letter-spacing: -0.03em;
@@ -644,7 +646,7 @@ button.log-open {
   color: var(--accent);
   font-variant-numeric: tabular-nums;
   text-align: end;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .log-meta {
