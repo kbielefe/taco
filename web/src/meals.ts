@@ -1,6 +1,7 @@
 import type { Meal, MealItem } from "./api.js";
 import { formatGrams, formatKcal, formatMacroLine, scaleMacros } from "./macros.js";
 import { formatTime } from "./time.js";
+import { titleCase } from "./title.js";
 
 export const MAX_SERVINGS = 24;
 
@@ -38,9 +39,9 @@ function trashIcon(): SVGSVGElement {
 
 function mealTitle(meal: Meal): string {
   if (meal.items.length > 0) {
-    return meal.items.map((item) => item.name).join(" and ");
+    return titleCase(meal.items.map((item) => item.name).join(" and "));
   }
-  return stripPortions(meal.description);
+  return titleCase(stripPortions(meal.description));
 }
 
 function stripPortions(text: string): string {

@@ -33,7 +33,7 @@ function friedRice(servings: number): Meal {
 describe("renderMeal", () => {
   it("shows the food name and the logged quantity", () => {
     const row = renderMeal(friedRice(2), () => {}, () => {}, false, () => {});
-    expect(row.querySelector(".log-title")?.textContent).toBe("fried rice");
+    expect(row.querySelector(".log-title")?.textContent).toBe("Fried Rice");
     expect(row.querySelector(".stepper span")?.textContent).toBe("2");
   });
 });

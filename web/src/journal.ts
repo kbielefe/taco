@@ -15,6 +15,7 @@ import { mountStringCombobox } from "./combobox.js";
 import { recentValueKey } from "../../src/journal/recent.js";
 import { pickSuggestions } from "../../src/log/fuzzy.js";
 import { formatTime, localDayRange } from "./time.js";
+import { titleCase } from "./title.js";
 import { confirmDelete } from "./undo.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -1041,12 +1042,13 @@ export function mountJournal(): { load: () => Promise<void> } {
     row.dataset.id = entry.id;
     const article = el("article", "meal");
     const when = formatTime(entry.at);
+    const title = titleCase(entry.kind.label);
     const head = el("div", "log-head");
     const main = el("div", "log-open");
-    main.append(el("span", "log-title", entry.kind.label), el("span", "log-value", figureFor(entry)));
+    main.append(el("span", "log-title", title), el("span", "log-value", figureFor(entry)));
     const del = el("button", "icon-button delete log-delete");
     del.type = "button";
-    del.setAttribute("aria-label", `Delete ${when} ${entry.kind.label}`);
+    del.setAttribute("aria-label", `Delete ${when} ${title}`);
     del.append(trashIcon());
     del.addEventListener("click", () => {
       removeEntry(entry, row);
