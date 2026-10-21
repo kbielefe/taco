@@ -35,11 +35,11 @@ function titleCaseWord(word: string, forceCapital: boolean): string {
   if (!forceCapital && SMALL_WORDS.has(lower)) {
     return lower;
   }
-  if (word.includes("-")) {
+  if (/[-&]/.test(word)) {
     return word
-      .split("-")
-      .map((part) => capitalizeToken(part))
-      .join("-");
+      .split(/([-&])/)
+      .map((part) => (part === "-" || part === "&" ? part : capitalizeToken(part)))
+      .join("");
   }
   return capitalizeToken(word);
 }

@@ -17,6 +17,11 @@ describe("titleCase", () => {
     expect(titleCase("sugar-free yogurt")).toBe("Sugar-Free Yogurt");
   });
 
+  it("capitalizes each side of an ampersand", () => {
+    expect(titleCase("m&m's")).toBe("M&M's");
+    expect(titleCase("a&w root beer")).toBe("A&W Root Beer");
+  });
+
   it("leaves blank and whitespace-only strings alone", () => {
     expect(titleCase("")).toBe("");
     expect(titleCase("   ")).toBe("   ");
