@@ -8,6 +8,7 @@ import { FoodLogAiError, FoodLogConfigError, FoodLogMatchError } from "./errors.
 import { candidateIds, clampGrams, compactSearchCandidate, fusedSearchFoods } from "./match.js";
 import { macrosForGrams, sumMacros, tryMacrosForGrams, withSearchNutrients } from "./nutrients.js";
 import { searchQueriesForItem } from "./parse.js";
+import { foodPhraseHasJoin, splitLeadingQuantity } from "./quantity.js";
 import { matchRank } from "./fuzzy.js";
 import { cacheResolution, QUERY_CACHE_PREFIX, queryCacheKey, suggestionFromCacheEntry, normalizeQuery } from "./query-cache.js";
 import { MongoFoodStore } from "./store.js";
@@ -87,17 +88,15 @@ export class FoodLogger {
     if (trimmed === "") {
       throw new FoodLogConfigError("food log query is required");
     }
+    const counted = splitLeadingQuantity(trimmed);
+    if (counted) {
+      const peeled = await this.resolve(counted.food, options, true);
+      if (peeled.items.length === 1 || !foodPhraseHasJoin(counted.food)) {
+        return this.save(counted.food, namedAs(peeled, counted.food), options, counted.quantity);
+      }
+    }
     const resolution = await this.resolve(trimmed, options);
-    await report(options.onProgress, "Saving meal.");
-    const now = new Date();
-    return this.foodStore.insert({
-      eatenAt: options.eatenAt ?? now,
-      query: trimmed,
-      description: resolution.description,
-      macros: resolution.macros,
-      items: resolution.items,
-      createdAt: now,
-    });
+    return this.save(trimmed, resolution, options, 1);
   }
 
   async list(from: Date, to: Date): Promise<FoodLogEntry[]> {
@@ -151,7 +150,26 @@ export class FoodLogger {
     }
   }
 
-  private async resolve(query: string, options: LogFoodOptions): Promise<FoodLogResolution> {
+  private async save(
+    query: string,
+    resolution: FoodLogResolution,
+    options: LogFoodOptions,
+    servings: number,
+  ): Promise<FoodLogEntry> {
+    await report(options.onProgress, "Saving meal.");
+    const now = new Date();
+    return this.foodStore.insert({
+      eatenAt: options.eatenAt ?? now,
+      query,
+      description: resolution.description,
+      macros: resolution.macros,
+      items: resolution.items,
+      createdAt: now,
+      ...(servings > 1 ? { servings } : {}),
+    });
+  }
+
+  private async resolve(query: string, options: LogFoodOptions, oneEach = false): Promise<FoodLogResolution> {
     const skipCache = options.skipCache === true;
     const onProgress = options.onProgress;
     const key = queryCacheKey(query);
@@ -167,7 +185,7 @@ export class FoodLogger {
       }
     }
 
-    const pending = this.resolveFresh(query, onProgress)
+    const pending = this.resolveFresh(query, onProgress, oneEach)
       .then(async (value) => {
         await this.queryCache.set(key, cacheResolution(query, value), QUERY_CACHE_TTL_MS);
         return value;
@@ -182,18 +200,19 @@ export class FoodLogger {
     return pending;
   }
 
-  private async resolveFresh(query: string, onProgress?: FoodLogProgress): Promise<FoodLogResolution> {
+  private async resolveFresh(query: string, onProgress?: FoodLogProgress, oneEach = false): Promise<FoodLogResolution> {
     await report(onProgress, "Parsing meal.");
     const parsed = await this.ai.parseQuery(query);
-    if (parsed.items.length === 0) {
+    const parsedItems = oneEach ? parsed.items.map((item) => ({ ...item, quantity: 1 })) : parsed.items;
+    if (parsedItems.length === 0) {
       throw new FoodLogAiError("Model returned no food items");
     }
 
-    const searchCount = parsed.items.reduce((count, item) => count + searchCallsForItem(item).length, 0);
+    const searchCount = parsedItems.reduce((count, item) => count + searchCallsForItem(item).length, 0);
     await report(onProgress, searchCount === 1 ? "Running 1 FDC search." : `Running ${searchCount} FDC searches.`);
 
     const searched = await Promise.all(
-      parsed.items.map(async (item) => {
+      parsedItems.map(async (item) => {
         const foods = await this.searchItem(item);
         if (foods.length === 0) {
           throw new FoodLogMatchError(`No FDC match for "${item.name}"`, {
@@ -297,6 +316,18 @@ function searchCallsForItem(item: ParsedFoodItem): SearchFoodsOptions[] {
       },
     ];
   });
+}
+
+function namedAs(resolution: FoodLogResolution, food: string): FoodLogResolution {
+  const item = resolution.items.length === 1 ? resolution.items[0] : undefined;
+  if (!item) {
+    return resolution;
+  }
+  return {
+    ...resolution,
+    description: `${food} (${item.servingDescription})`,
+    items: [{ ...item, name: food }],
+  };
 }
 
 async function report(onProgress: FoodLogProgress | undefined, message: string): Promise<void> {

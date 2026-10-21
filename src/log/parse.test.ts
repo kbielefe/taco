@@ -105,6 +105,40 @@ describe("ParsedMealSchema", () => {
     expect(two.items[0]?.searchQueries).toEqual(["banana raw", "banana"]);
     expect(two.items[0]?.dataTypes).toBeUndefined();
   });
+
+  it("moves a leading count out of the food name", () => {
+    const parsed = normalizeParsedMeal(
+      ParsedMealSchema.parse({
+        items: [
+          {
+            name: "2 fried rice",
+            searchQueries: ["fried rice"],
+            brandOwner: null,
+            dataTypes: null,
+            servingHint: "1 cup",
+            quantity: 1,
+          },
+        ],
+      }),
+    );
+    expect(parsed.items[0]).toMatchObject({ name: "fried rice", quantity: 2 });
+
+    const measured = normalizeParsedMeal(
+      ParsedMealSchema.parse({
+        items: [
+          {
+            name: "2 cups of rice",
+            searchQueries: ["rice"],
+            brandOwner: null,
+            dataTypes: null,
+            servingHint: "2 cups",
+            quantity: 1,
+          },
+        ],
+      }),
+    );
+    expect(measured.items[0]).toMatchObject({ name: "2 cups of rice", quantity: 1 });
+  });
 });
 
 describe("uniqueSearchQueries", () => {

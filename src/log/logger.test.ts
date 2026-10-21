@@ -406,6 +406,94 @@ describe("FoodLogger", () => {
     expect(await logger.list(new Date("2026-09-20T00:00:00Z"), new Date("2026-09-21T00:00:00Z"))).toHaveLength(1);
   });
 
+  it("logs a leading count as the food with that quantity", async () => {
+    const rice = jsonFood({ fdcId: 7, description: "Rice, fried", servingSize: 200, servingSizeUnit: "g" });
+    const ai = mockAi(
+      meal([{ name: "Rice, fried", searchQueries: ["fried rice"], servingHint: "1 cup", quantity: 4 }]),
+      { fdcId: 7, grams: 200, servingDescription: "1 cup" },
+    );
+    const fdc = mockFdc([rice], { 7: details(7, "Rice, fried", 100) });
+    const foodStore = new MemoryFoodStore();
+    const logger = new FoodLogger({ fdc, ai, queryCache: new MemoryCacheStore(), foodStore });
+
+    const entry = await logger.log("2 fried rice");
+    const again = await logger.log("3 fried rice");
+
+    expect(ai.parseQuery).toHaveBeenCalledExactlyOnceWith("fried rice");
+    expect(ai.selectMatch).toHaveBeenCalledOnce();
+    expect(ai.selectMatch).toHaveBeenCalledWith(expect.objectContaining({ item: expect.objectContaining({ quantity: 1 }) }));
+    expect(entry.query).toBe("fried rice");
+    expect(entry.servings).toBe(2);
+    expect(entry.items[0]).toMatchObject({ name: "fried rice", grams: 200 });
+    expect(entry.macros.caloriesKcal).toBe(200);
+    expect(entry.description).toBe("fried rice (1 cup)");
+    expect(again.servings).toBe(3);
+    expect(again.macros).toEqual(entry.macros);
+    expect(foodStore.entries).toHaveLength(2);
+  });
+
+  it("keeps a measured amount on the food instead of the quantity", async () => {
+    const ai = mockAi(
+      meal([{ name: "rice", searchQueries: ["rice"], servingHint: "2 cups", quantity: 1 }]),
+      { fdcId: 7, grams: 316, servingDescription: "2 cups" },
+    );
+    const logger = new FoodLogger({
+      fdc: mockFdc([jsonFood({ fdcId: 7, description: "Rice, white" })], { 7: details(7, "Rice, white", 130) }),
+      ai,
+      queryCache: new MemoryCacheStore(),
+      foodStore: new MemoryFoodStore(),
+    });
+
+    const entry = await logger.log("2 cups of fried rice");
+    expect(ai.parseQuery).toHaveBeenCalledExactlyOnceWith("2 cups of fried rice");
+    expect(entry.servings).toBeUndefined();
+    expect(entry.query).toBe("2 cups of fried rice");
+  });
+
+  it("lets a leading count on a joined meal apply to the first food", async () => {
+    const banana = { name: "bananas", searchQueries: ["banana"], servingHint: "1 banana", quantity: 1 };
+    const milk = { name: "milk", searchQueries: ["milk"], servingHint: "1 cup", quantity: 1 };
+    const ai: FoodLogAi = {
+      parseQuery: vi.fn(async (query: string) => {
+        if (query === "bananas and milk") {
+          return meal([banana, milk]);
+        }
+        if (query === "2 bananas and milk") {
+          return meal([{ ...banana, quantity: 2 }, milk]);
+        }
+        throw new Error(`unexpected query ${query}`);
+      }),
+      selectMatch: vi.fn(async (input: SelectMatchInput) =>
+        input.item.name === "milk"
+          ? { fdcId: 20, grams: 244, servingDescription: "1 cup" }
+          : { fdcId: 10, grams: input.item.quantity * 118, servingDescription: "1 banana" },
+      ),
+    };
+    const logger = new FoodLogger({
+      fdc: mockFdc(
+        (query) =>
+          query.toLowerCase().includes("milk")
+            ? [jsonFood({ fdcId: 20, description: "Milk" })]
+            : [jsonFood({ fdcId: 10, description: "Bananas, raw" })],
+        { 10: details(10, "Bananas, raw", 89), 20: details(20, "Milk", 50) },
+      ),
+      ai,
+      queryCache: new MemoryCacheStore(),
+      foodStore: new MemoryFoodStore(),
+    });
+
+    const entry = await logger.log("2 bananas and milk");
+    expect(ai.parseQuery).toHaveBeenCalledTimes(2);
+    expect(ai.parseQuery).toHaveBeenNthCalledWith(1, "bananas and milk");
+    expect(ai.parseQuery).toHaveBeenNthCalledWith(2, "2 bananas and milk");
+    expect(entry.query).toBe("2 bananas and milk");
+    expect(entry.servings).toBeUndefined();
+    expect(entry.items.map((item) => ({ name: item.name, grams: item.grams }))).toEqual([
+      { name: "bananas", grams: 236 },
+      { name: "milk", grams: 244 },
+    ]);
+  });
+
   it("rejects an empty query", async () => {
     const logger = new FoodLogger({
       fdc: mockFdc([], {}),
