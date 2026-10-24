@@ -46,7 +46,7 @@ On Food and Journal, a photo sits only outside the content column. The column it
 - Nutrition comes from USDA FoodData Central: calories, protein, fat, carbohydrate, and fiber. The labels are Protein, Fat, Carbs, and Fiber. Carbs is the chosen word.
 - A meal is removed and logged again. There is no in-place edit.
 - Food and Journal have no day picker. There is no installable app.
-- When a correction has been learned from weigh-ins, meal rows and today's totals show adjusted calories. The stored meal is not rewritten. The recommendation is still calculated from body size and the previous week's logged intake, not from that correction. The target starts using the correction only after a held-out week predicts weight change better than the log alone. The written rule is `docs/calorie-correction.md`.
+- When a correction has been learned from weigh-ins, meal rows and today's totals show adjusted calories. The stored meal is not rewritten. The recommendation is still calculated from body size and the last few weeks of logged intake, not from that correction. The target starts using the correction only after a held-out week predicts weight change better than the log alone. The written rule is `docs/calorie-correction.md`.
 
 ### Journal
 
@@ -56,10 +56,10 @@ On Food and Journal, a photo sits only outside the content column. The column it
 
 ### Calorie recommendation
 
-- Body size uses Mifflin–St Jeor and an activity level, from birth year, sex, and height in the environment, plus weight from the journal.
+- Body size uses Mifflin–St Jeor and an activity level, from birth year, sex, and height in the environment, plus weight from the journal. As a few weeks of food and weight accumulate, expenditure blends toward that stretch. A new weigh-in nudges the blend.
 - BMI 25 or higher: lose about 2 lb a week. The middle of the range is that pace. The bottom is the faster of that pace and about 1% of body weight a week, and it never goes under 1,500 kcal for men or 1,200 kcal for women. The top matches that gap unless it would pass maintenance.
 - Below BMI 25, including below 18.5, the target is maintenance, as one number.
-- The previous 7 logged days slide both ends so the stretch still averages the pace. A day under 800 kcal does not move the range.
+- The previous 7 logged days nudge both ends. One day moves the range by about a seventh of that day's difference from the pace, so a high or low day does not rewrite the next day. A day under 800 kcal does not move the range.
 - A missing profile or a missing weight shows a plain-language reason and no target number.
 
 ### Ask

@@ -212,7 +212,7 @@ flowchart TD
 
 The comparison is a leave-one-week-out check. Hide one usable stretch, learn from the others, and see whether the hidden week's weight change was predicted better than by trusting the log and the current burn estimate. A fancier model has to beat a single overall multiplier, and that single multiplier has to beat leaving the log alone. If it does not, nothing changes.
 
-The daily target's other rules stay either way: the goal is still maintenance, or 1,000 calories below maintenance when body mass index is 25 or higher, and the result is never under the safe floor. On a loss day the food page shows that pace as a range. The middle is the 2 lb a week intake. The bottom is the faster of that pace and about 1% of body weight a week, and it never goes under the safe floor. The previous 7 days slide both ends so the stretch still averages the 2 lb pace. A day under 800 kcal does not move the range.
+The daily target's other rules stay either way: the goal is still maintenance, or 1,000 calories below maintenance when body mass index is 25 or higher, and the result is never under the safe floor. On a loss day the food page shows that pace as a range. The middle is the 2 lb a week intake. The bottom is the faster of that pace and about 1% of body weight a week, and it never goes under the safe floor. Expenditure blends from body size toward the last few weeks of food and weight as that stretch gets longer. The previous 7 days nudge both ends by about a seventh of their gap from that pace, so one high or low day does not rewrite the next day. A day under 800 kcal does not move the range.
 
 ## Limits worth remembering
 
