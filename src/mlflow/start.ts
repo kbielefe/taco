@@ -2,11 +2,10 @@ import { readAskReasoningEffort, readReasoningEffort } from "../log/ai.js";
 import { DEFAULT_FOOD_LOG_MODEL } from "../log/types.js";
 import { MlflowClient } from "./client.js";
 import { PROMPT, PromptBook, type PromptName, type PromptTags } from "./prompts.js";
-import { flushTracing, startTracing } from "./tracing.js";
+import { shutdownTracing, startTracing } from "./tracing.js";
 
 const SYNC_TIMEOUT_MS = 3_000;
 const RETRY_DELAY_MS = 5_000;
-const EXPERIMENT = "taco";
 
 export interface MlflowHandle {
   prompts: PromptBook;
@@ -19,26 +18,25 @@ export function startMlflow(options: { env?: NodeJS.ProcessEnv; prompts?: Prompt
   const env = options.env ?? process.env;
   const prompts = options.prompts ?? new PromptBook();
   const trackingUri = env.MLFLOW_TRACKING_URI?.trim() ?? "";
-  if (!trackingUri || env.VITEST) {
+  if (env.VITEST) {
     return { prompts, ready: Promise.resolve(), shutdown: async () => {} };
+  }
+  // Traces go to Alloy. The tracking URI is only for prompt versions.
+  startTracing(env);
+  if (!trackingUri) {
+    return { prompts, ready: Promise.resolve(), shutdown: shutdownTracing };
   }
 
   const stop = new AbortController();
   let retry: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
   let logged = false;
-  let tracing = false;
 
   const attempt = async (): Promise<void> => {
     const client = new MlflowClient({
       trackingUri,
       signal: AbortSignal.any([stop.signal, AbortSignal.timeout(SYNC_TIMEOUT_MS)]),
     });
-    const experimentId = await client.ensureExperiment(EXPERIMENT);
-    if (!tracing) {
-      await startTracing(trackingUri, experimentId);
-      tracing = true;
-    }
     await prompts.sync(client, (name) => tagsFor(name, env));
   };
 
@@ -73,7 +71,7 @@ export function startMlflow(options: { env?: NodeJS.ProcessEnv; prompts?: Prompt
       if (retry) {
         clearTimeout(retry);
       }
-      await flushTracing();
+      await shutdownTracing();
     },
   };
 }

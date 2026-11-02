@@ -1,0 +1,19 @@
+[Unit]
+Description=Taco Cloudflare tunnel
+Requires=health-tracker-network.service health-tracker-web.service
+After=health-tracker-network.service health-tracker-web.service
+
+[Container]
+ContainerName=health-tracker-cloudflared
+Image=docker.io/cloudflare/cloudflared:latest
+Network=health-tracker.network
+EnvironmentFile=%t/health-tracker-cloudflared.env
+# The image entrypoint is cloudflared. The remote config calls http://web:3001.
+Exec=tunnel --no-autoupdate run
+
+[Service]
+ExecStartPre=/bin/sh %h/source/taco/quadlet/render-env.sh cloudflared %t/health-tracker-cloudflared.env
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

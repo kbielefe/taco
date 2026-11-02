@@ -146,7 +146,7 @@ export async function runAsk(options: RunAskOptions): Promise<void> {
     let output: unknown[];
     try {
       const created = await withMlflowSpan(
-        { name: "ask model", spanType: "LLM", inputs: { instructions, input }, links },
+        { name: "ask model", spanType: "LLM", model: DEFAULT_FOOD_LOG_MODEL, inputs: { instructions, input }, links },
         async () => {
           const response = await options.model.create({ instructions, input });
           return { result: response, outputs: response.output, ...(response.usage ? { usage: response.usage } : {}) };

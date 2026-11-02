@@ -1,7 +1,8 @@
 import { ObjectId } from "mongodb";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { context, trace, TraceFlags } from "@opentelemetry/api";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { context, trace, type Attributes, type Context } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
+import { TracerProvider, type ReadableSpan, type Span as SdkSpan, type SpanProcessor } from "@opentelemetry/sdk-trace";
 import { createCorrectionRunner } from "../correct/run.js";
 import { FdcClient, fdcSearchInputs } from "../fdc/client.js";
 import { MemoryCacheStore, MongoCacheStore } from "../fdc/cache.js";
@@ -11,146 +12,62 @@ import { MemoryJournalStore } from "../journal/store.js";
 import { XaiFoodLogAi } from "../log/ai.js";
 import { FoodLogger } from "../log/logger.js";
 import { MongoFoodStore } from "../log/store.js";
-import { FOOD_LOG_CACHE_SOURCE } from "../log/types.js";
+import { DEFAULT_FOOD_LOG_MODEL, FOOD_LOG_CACHE_SOURCE } from "../log/types.js";
 import { createApp } from "../web/routes.js";
 import { requestPreview, shouldTraceRequest } from "./http.js";
 import { createSessionId, readSessionId, SESSION_MAX_AGE, sessionCookieOptions } from "./session.js";
-import { disableTracing, holdUntilBody, startTracing, traceHttp } from "./tracing.js";
+import { disableTracing, enableTracing, holdUntilBody, traceHttp, withMlflowSpan } from "./tracing.js";
 
 interface RecordedSpan {
   name: string;
   spanId: string;
   traceId: string;
   parentId?: string;
-  inputs: unknown;
-  outputs: unknown;
+  attributes: Attributes;
   ended: boolean;
-  sessionId?: string;
-  requestPreview?: string;
-  responsePreview?: string;
 }
 
-const recorder = vi.hoisted(() => {
-  const spans: RecordedSpan[] = [];
-  return {
-    spans,
-    reset(): void {
-      spans.length = 0;
-    },
-  };
-});
+const recorder = {
+  spans: [] as RecordedSpan[],
+  reset(): void {
+    this.spans.length = 0;
+  },
+};
 
-vi.mock("@mlflow/core", () => {
-  let nextId = 0;
-  const id = (width: number): string => {
-    nextId += 1;
-    return nextId.toString(16).padStart(width, "0");
-  };
-  const open = (options?: { name?: string; spanType?: string; inputs?: unknown }) => {
-    const parent = trace.getActiveSpan()?.spanContext();
-    const recorded: RecordedSpan = {
-      name: options?.name ?? "span",
-      spanId: id(16),
-      traceId: parent?.traceId ?? id(32),
-      ...(parent ? { parentId: parent.spanId } : {}),
-      inputs: options?.inputs,
-      outputs: undefined,
+const processor: SpanProcessor = {
+  onStart(span: SdkSpan, parentContext: Context): void {
+    const parent = trace.getSpan(parentContext)?.spanContext().spanId;
+    recorder.spans.push({
+      name: span.name,
+      spanId: span.spanContext().spanId,
+      traceId: span.spanContext().traceId,
+      ...(parent ? { parentId: parent } : {}),
+      attributes: {},
       ended: false,
-    };
-    recorder.spans.push(recorded);
-    const otel = {
-      spanContext: () => ({ traceId: recorded.traceId, spanId: recorded.spanId, traceFlags: TraceFlags.SAMPLED }),
-      setAttribute() {},
-      setAttributes() {},
-      addEvent() {},
-      addLink() {},
-      addLinks() {},
-      setStatus() {},
-      updateName() {},
-      end() {
-        recorded.ended = true;
-      },
-      isRecording: () => !recorded.ended,
-      recordException() {},
-    };
-    return {
-      _span: otel,
-      outputs: undefined as unknown,
-      setOutputs(value: unknown) {
-        recorded.outputs = value;
-        this.outputs = value;
-      },
-      setAttribute() {},
-      setStatus() {},
-      recordException() {},
-      end() {
-        recorded.ended = true;
-      },
-    };
-  };
-  return {
-    init() {
-      // MLflow's real init registers this through NodeSDK. The mock must too,
-      // or context.with does not keep a span active across await.
-      const manager = new AsyncLocalStorageContextManager();
-      manager.enable();
-      context.setGlobalContextManager(manager);
-    },
-    flushTraces() {},
-    tracingContext(_options: unknown, fn: () => unknown) {
-      return fn();
-    },
-    startSpan: open,
-    withSpan(callback: (span: ReturnType<typeof open>) => unknown, options?: { name?: string; inputs?: unknown }) {
-      const span = open(options);
-      return context.with(trace.setSpan(context.active(), span._span), async () => {
-        try {
-          const value = await callback(span);
-          if (span.outputs === undefined) {
-            span.setOutputs(value);
-          }
-          span.end();
-          return value;
-        } catch (error) {
-          span.end();
-          throw error;
-        }
-      });
-    },
-    updateCurrentTrace(options: { sessionId?: string; requestPreview?: string; responsePreview?: string }) {
-      const active = trace.getActiveSpan()?.spanContext().spanId;
-      const recorded = recorder.spans.find((span) => span.spanId === active);
-      if (!recorded) {
-        return;
-      }
-      if (options.sessionId) {
-        recorded.sessionId = options.sessionId;
-      }
-      if (options.requestPreview) {
-        recorded.requestPreview = options.requestPreview;
-      }
-      if (options.responsePreview) {
-        recorded.responsePreview = options.responsePreview;
-      }
-    },
-    SpanType: {
-      LLM: "LLM",
-      AGENT: "AGENT",
-      CHAIN: "CHAIN",
-      TOOL: "TOOL",
-      RETRIEVER: "RETRIEVER",
-    },
-    SpanAttributeKey: {
-      TOKEN_USAGE: "mlflow.chat.tokenUsage",
-      MESSAGE_FORMAT: "mlflow.message.format",
-    },
-  };
+    });
+  },
+  onEnd(span: ReadableSpan): void {
+    const recorded = recorder.spans.find((item) => item.spanId === span.spanContext().spanId);
+    if (!recorded) return;
+    recorded.ended = true;
+    recorded.attributes = span.attributes;
+  },
+  forceFlush: () => Promise.resolve(),
+  shutdown: () => Promise.resolve(),
+};
+
+beforeEach(() => {
+  recorder.reset();
+  const manager = new AsyncLocalStorageContextManager();
+  manager.enable();
+  context.setGlobalContextManager(manager);
+  const provider = new TracerProvider({ spanProcessors: [processor] });
+  trace.setGlobalTracerProvider(provider);
+  enableTracing(() => provider.shutdown());
 });
 
-afterEach(() => {
-  disableTracing();
-  context.disable();
-  recorder.reset();
+afterEach(async () => {
+  await disableTracing();
 });
 
 describe("trace session", () => {
@@ -235,6 +152,32 @@ describe("holdUntilBody", () => {
   });
 });
 
+describe("span contents", () => {
+  it("records the model and token counts and leaves the prompt out", async () => {
+    await withMlflowSpan(
+      {
+        name: "parse meal",
+        spanType: "LLM",
+        model: "grok-4.7",
+        inputs: { messages: [{ role: "system", content: "SECRET PROMPT banana" }] },
+      },
+      async () => ({
+        result: "ok",
+        outputs: { meal: "banana" },
+        usage: { input_tokens: 3, output_tokens: 4, total_tokens: 7 },
+      }),
+    );
+    const span = recorder.spans.find((item) => item.name === "taco parse meal");
+    expect(span?.attributes["gen_ai.request.model"]).toBe("grok-4.7");
+    expect(span?.attributes["gen_ai.provider.name"]).toBe("xai");
+    expect(span?.attributes["gen_ai.usage.input_tokens"]).toBe(3);
+    expect(span?.attributes["gen_ai.usage.output_tokens"]).toBe(4);
+    const recorded = JSON.stringify(span);
+    expect(recorded).not.toContain("SECRET PROMPT");
+    expect(recorded).not.toContain("banana");
+  });
+});
+
 describe("meal log trace", () => {
   it("keeps one root open until the streamed meal is written", async () => {
     let release = (): void => {};
@@ -314,7 +257,6 @@ describe("meal log trace", () => {
       journal: new Journal(new MemoryJournalStore()),
     });
 
-    await startTracing("http://mlflow.test", "1");
     const health = await app.request("http://127.0.0.1/api/health");
     expect(health.headers.get("set-cookie")).toBeNull();
 
@@ -324,7 +266,7 @@ describe("meal log trace", () => {
       body: JSON.stringify({ query: "banana" }),
     });
     const root = (): RecordedSpan | undefined =>
-      recorder.spans.find((span) => span.name === "POST /api/meals" && !span.parentId);
+      recorder.spans.find((span) => span.name === "taco POST /api/meals" && !span.parentId);
     expect(recorder.spans.filter((span) => !span.parentId)).toHaveLength(1);
     expect(root()?.ended).toBe(false);
 
@@ -335,37 +277,41 @@ describe("meal log trace", () => {
 
     const names = recorder.spans.map((span) => span.name);
     expect(names).toEqual(expect.arrayContaining([
-      "mongo cache.get",
-      "parse meal",
-      "fdc search",
-      "fdc POST /v1/foods/search",
-      "select match",
-      "fdc get",
-      "fdc GET /v1/food/1",
-      "mongo cache.set",
-      "mongo food.insert",
+      "taco mongo cache.get",
+      "taco parse meal",
+      "taco fdc search",
+      "taco fdc POST /v1/foods/search",
+      "taco select match",
+      "taco fdc get",
+      "taco fdc GET /v1/food/1",
+      "taco mongo cache.set",
+      "taco mongo food.insert",
     ]));
     const spanNamed = (name: string): RecordedSpan | undefined => recorder.spans.find((span) => span.name === name);
-    expect(spanNamed("mongo cache.get")?.parentId).toBe(root()?.spanId);
-    expect(spanNamed("parse meal")?.parentId).toBe(root()?.spanId);
-    expect(spanNamed("fdc POST /v1/foods/search")?.parentId).toBe(spanNamed("fdc search")?.spanId);
-    expect(spanNamed("fdc GET /v1/food/1")?.parentId).toBe(spanNamed("fdc get")?.spanId);
-    expect(spanNamed("mongo cache.set")?.parentId).toBe(root()?.spanId);
-    expect(spanNamed("mongo food.insert")?.parentId).toBe(root()?.spanId);
+    expect(spanNamed("taco mongo cache.get")?.parentId).toBe(root()?.spanId);
+    expect(spanNamed("taco parse meal")?.parentId).toBe(root()?.spanId);
+    expect(spanNamed("taco fdc POST /v1/foods/search")?.parentId).toBe(spanNamed("taco fdc search")?.spanId);
+    expect(spanNamed("taco fdc GET /v1/food/1")?.parentId).toBe(spanNamed("taco fdc get")?.spanId);
+    expect(spanNamed("taco mongo cache.set")?.parentId).toBe(root()?.spanId);
+    expect(spanNamed("taco mongo food.insert")?.parentId).toBe(root()?.spanId);
     expect(recorder.spans.filter((span) => !span.parentId)).toHaveLength(1);
     for (const span of recorder.spans) {
       if (span.parentId) {
         expect(recorder.spans.some((parent) => parent.spanId === span.parentId)).toBe(true);
       }
     }
-    const search = recorder.spans.find((span) => span.name === "fdc search");
-    expect(search?.inputs).toMatchObject({ query: "banana" });
-    expect(JSON.stringify(search)).not.toContain("api_key");
-    expect(search?.outputs).toMatchObject({ cache: "miss" });
-    expect(root()?.requestPreview).toBe("POST /api/meals banana");
-    expect(root()?.responsePreview).toMatch(/^200 /);
-    expect(root()?.responsePreview).toContain('"type":"result"');
-    expect(root()?.sessionId).toMatch(/^[a-f0-9]{32}$/);
+    const search = recorder.spans.find((span) => span.name === "taco fdc search");
+    expect(search?.attributes["taco.cache"]).toBe("miss");
+    const parse = spanNamed("taco parse meal");
+    expect(parse?.attributes["gen_ai.request.model"]).toBe(DEFAULT_FOOD_LOG_MODEL);
+    expect(parse?.attributes["gen_ai.provider.name"]).toBe("xai");
+    expect(root()?.attributes["http.request.method"]).toBe("POST");
+    expect(root()?.attributes["url.path"]).toBe("/api/meals");
+    expect(root()?.attributes["http.response.status_code"]).toBe(200);
+    const recorded = JSON.stringify(recorder.spans);
+    expect(recorded).not.toContain("api_key");
+    expect(recorded).not.toContain("banana");
+    expect(recorded).not.toContain("test-key");
 
     const cookie = response.headers.get("set-cookie") ?? "";
     expect(cookie).toContain("HttpOnly");
@@ -374,7 +320,8 @@ describe("meal log trace", () => {
     expect(cookie).toContain(`Max-Age=${SESSION_MAX_AGE}`);
     expect(cookie.toLowerCase()).not.toContain("secure");
     const sessionId = /taco-session=([a-f0-9]{32})/.exec(cookie)?.[1];
-    expect(sessionId).toBe(root()?.sessionId);
+    expect(sessionId).toMatch(/^[a-f0-9]{32}$/);
+    expect(recorded).not.toContain(sessionId);
 
     recorder.reset();
     const again = await app.request("http://127.0.0.1/api/journal/kinds", {
@@ -383,9 +330,9 @@ describe("meal log trace", () => {
     expect(again.headers.get("set-cookie")).toBeNull();
     await again.json();
     await vi.waitFor(() =>
-      expect(recorder.spans.find((span) => span.name === "GET /api/journal/kinds")?.ended).toBe(true),
+      expect(recorder.spans.find((span) => span.name === "taco GET /api/journal/kinds")?.ended).toBe(true),
     );
-    expect(recorder.spans.find((span) => span.name === "GET /api/journal/kinds")?.sessionId).toBe(sessionId);
+    expect(JSON.stringify(recorder.spans)).not.toContain(sessionId);
 
     const secure = await app.request("https://example.com/api/journal/kinds");
     expect(secure.headers.get("set-cookie")?.toLowerCase()).toContain("secure");
@@ -397,19 +344,17 @@ describe("meal log trace", () => {
       Response.json({ foods: [{ fdcId: 1, description: "Bananas, raw", dataType: "SR Legacy", score: 100 }] }),
     );
     const fdc = new FdcClient({ apiKey: "test-key", cache: new MemoryCacheStore(), fetch: fetchMock });
-    await startTracing("http://mlflow.test", "1");
     await fdc.searchFoods({ query: "banana", pageSize: 8 });
     recorder.reset();
     await fdc.searchFoods({ query: "banana", pageSize: 8 });
     const names = recorder.spans.map((span) => span.name);
-    expect(names).toContain("fdc search");
-    expect(names.some((name) => name.startsWith("fdc POST"))).toBe(false);
-    expect(recorder.spans.find((span) => span.name === "fdc search")?.outputs).toMatchObject({ cache: "hit" });
+    expect(names).toContain("taco fdc search");
+    expect(names.some((name) => name.startsWith("taco fdc POST"))).toBe(false);
+    expect(recorder.spans.find((span) => span.name === "taco fdc search")?.attributes["taco.cache"]).toBe("hit");
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("records a correction fit as its own trace", async () => {
-    await startTracing("http://mlflow.test", "1");
     const runner = createCorrectionRunner({
       store: {
         async read() {
@@ -424,8 +369,6 @@ describe("meal log trace", () => {
     const response = await traceHttp(
       {
         name: "POST /api/journal/observations",
-        inputs: {},
-        requestPreview: "POST /api/journal/observations",
       },
       async () => {
         runner.schedule({ timeZone: "UTC" });
@@ -435,10 +378,10 @@ describe("meal log trace", () => {
     expect(await response.text()).toBe("saved");
     await runner.whenIdle();
     await vi.waitFor(() =>
-      expect(recorder.spans.find((span) => span.name === "POST /api/journal/observations")?.ended).toBe(true),
+      expect(recorder.spans.find((span) => span.name === "taco POST /api/journal/observations")?.ended).toBe(true),
     );
-    const fit = recorder.spans.find((span) => span.name === "fit corrections");
-    const request = recorder.spans.find((span) => span.name === "POST /api/journal/observations");
+    const fit = recorder.spans.find((span) => span.name === "taco fit corrections");
+    const request = recorder.spans.find((span) => span.name === "taco POST /api/journal/observations");
     expect(fit?.parentId).toBeUndefined();
     expect(fit?.ended).toBe(true);
     expect(request?.parentId).toBeUndefined();

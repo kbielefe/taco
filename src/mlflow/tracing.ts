@@ -1,7 +1,7 @@
-import { context, ROOT_CONTEXT, trace, type Span as OtelSpan } from "@opentelemetry/api";
+import { context, ROOT_CONTEXT, SpanStatusCode, trace, type Attributes, type Span } from "@opentelemetry/api";
+import { SERVICE, startTelemetry } from "../otel.js";
 import type { ResolvedPrompt } from "./prompts.js";
 
-const LINKED_PROMPTS = "mlflow.linkedPrompts";
 const PREVIEW_LIMIT = 1_000;
 
 export interface TokenUsage {
@@ -21,89 +21,90 @@ export type MlflowSpanKind = "LLM" | "AGENT" | "CHAIN" | "TOOL" | "RETRIEVER";
 export interface MlflowSpanOptions {
   name: string;
   spanType: MlflowSpanKind;
-  inputs: unknown;
+  /**
+   * Accepted so call sites can keep their arguments. Not copied onto the span.
+   * Traces go to Grafana Cloud, so prompts, meals, and journal text stay off.
+   */
+  inputs?: unknown;
   links?: ResolvedPrompt[];
+  /** Model name for an LLM span. Recorded as gen_ai.request.model. */
+  model?: string;
   /** Start a new trace. A correction fit uses this so it does not nest under the journal request. */
   root?: boolean;
 }
 
 export interface TraceHttpOptions {
   name: string;
-  inputs: unknown;
-  requestPreview: string;
-  sessionId?: string;
   signal?: AbortSignal;
 }
 
-interface SpanLike {
-  setOutputs(outputs: unknown): void;
-  setAttribute(key: string, value: unknown): void;
-}
-
-interface RequestSpan extends SpanLike {
-  _span?: OtelSpan;
-  setStatus(status: string, description?: string): void;
-  recordException(error: Error): void;
-  end(): void;
-}
-
-let sdk: typeof import("@mlflow/core") | undefined;
+let enabled = false;
+let shutdownImpl: (() => Promise<void>) | undefined;
 
 export function tracingEnabled(): boolean {
-  return sdk !== undefined;
+  return enabled;
 }
 
-/** Start tracing. The SDK is imported only after this is called, so tests do not start OpenTelemetry. */
-export async function startTracing(trackingUri: string, experimentId: string): Promise<void> {
-  sdk = await loadCore();
-  sdk.init({ trackingUri, experimentId });
+/** Prefix an operation. Traces share one MLflow experiment, and this service name stays on the resource. */
+export function spanName(operation: string): string {
+  const prefix = `${SERVICE} `;
+  return operation.startsWith(prefix) ? operation : `${prefix}${operation}`;
 }
 
-export async function flushTracing(): Promise<void> {
-  if (!sdk) {
-    return;
-  }
-  await sdk.flushTraces();
+/** Start export to Alloy. Vitest does not call this; tests install their own provider. */
+export function startTracing(env: Record<string, string | undefined> = process.env): void {
+  if (enabled || env.VITEST) return;
+  const telemetry = startTelemetry(env);
+  if (!telemetry) return;
+  enabled = true;
+  shutdownImpl = telemetry.shutdown;
+}
+
+/** Tests register a tracer provider, then turn the helpers on. */
+export function enableTracing(shutdown: () => Promise<void>): void {
+  enabled = true;
+  shutdownImpl = shutdown;
+}
+
+export async function shutdownTracing(): Promise<void> {
+  enabled = false;
+  const shutdown = shutdownImpl;
+  shutdownImpl = undefined;
+  await shutdown?.();
 }
 
 /** Clears the tracing flag. Tests use this so a later file does not export spans. */
-export function disableTracing(): void {
-  sdk = undefined;
+export async function disableTracing(): Promise<void> {
+  await shutdownTracing();
+  trace.disable();
+  context.disable();
 }
 
 export async function withMlflowSpan<T>(options: MlflowSpanOptions, fn: () => Promise<SpanResult<T>>): Promise<T> {
-  if (!sdk) {
+  if (!enabled) {
     return (await fn()).result;
   }
-  const mlflow = sdk;
-  const links = (options.links ?? [])
-    .filter((link): link is ResolvedPrompt & { version: string } => typeof link.version === "string")
-    .map((link) => ({ name: link.name, version: link.version }));
-  const tags = links.length > 0 ? { [LINKED_PROMPTS]: JSON.stringify(links) } : undefined;
-  const run = () =>
-    mlflow.withSpan(
-      async (span: SpanLike) => {
-        if (tags) {
-          mlflow.updateCurrentTrace({ tags });
-          span.setAttribute(LINKED_PROMPTS, tags[LINKED_PROMPTS]);
-        }
-        const { result, outputs, usage } = await fn();
-        span.setOutputs(outputs);
-        if (usage) {
-          span.setAttribute(mlflow.SpanAttributeKey.TOKEN_USAGE, usage);
-        }
-        if (options.spanType === "LLM") {
-          span.setAttribute(mlflow.SpanAttributeKey.MESSAGE_FORMAT, "openai");
-        }
-        return result;
-      },
-      { name: options.name, spanType: mlflow.SpanType[options.spanType], inputs: options.inputs },
-    );
-  const start = () => (options.root ? context.with(ROOT_CONTEXT, run) : run());
-  if (!tags) {
-    return start();
+  const attributes: Attributes = { "taco.span_type": options.spanType };
+  if (options.spanType === "LLM") {
+    attributes["gen_ai.operation.name"] = "chat";
+    attributes["gen_ai.provider.name"] = "xai";
+    if (options.model) attributes["gen_ai.request.model"] = options.model;
   }
-  return mlflow.tracingContext({ tags }, start);
+  const run = () =>
+    trace.getTracer(SERVICE).startActiveSpan(spanName(options.name), { attributes }, async (span) => {
+      try {
+        const { result, outputs, usage } = await fn();
+        recordUsage(span, usage);
+        recordSafe(span, outputs);
+        return result;
+      } catch (error) {
+        recordError(span, error);
+        throw error;
+      } finally {
+        span.end();
+      }
+    });
+  return options.root ? context.with(ROOT_CONTEXT, run) : run();
 }
 
 export async function withToolSpan<T>(
@@ -121,58 +122,49 @@ export async function withToolSpan<T>(
 /**
  * One root span for an HTTP request. The response is returned as soon as the
  * handler produces it. The span stays open until the body has finished, so a
- * streamed meal log or ask stays inside this trace.
+ * streamed meal log or ask stays inside this trace. The body text is not recorded.
  */
 export async function traceHttp(options: TraceHttpOptions, handler: () => Promise<Response>): Promise<Response> {
-  if (!sdk) {
+  if (!enabled) {
     return handler();
   }
-  const mlflow = sdk;
-  const span = mlflow.startSpan({
-    name: options.name,
-    spanType: mlflow.SpanType.CHAIN,
-    inputs: options.inputs,
-  }) as RequestSpan;
-  const otelSpan = span._span;
-  if (!otelSpan) {
-    return handler();
-  }
-  const parent = trace.setSpan(context.active(), otelSpan);
+  const span = trace.getTracer(SERVICE).startSpan(spanName(options.name), {
+    attributes: { "taco.span_type": "CHAIN", ...httpFields(options.name) },
+  });
+  const parent = trace.setSpan(context.active(), span);
   return context.with(parent, async () => {
-    mlflow.updateCurrentTrace({
-      ...(options.sessionId ? { sessionId: options.sessionId } : {}),
-      requestPreview: options.requestPreview,
-    });
     let response: Response;
     try {
       response = await handler();
     } catch (error) {
-      failSpan(span, error);
+      recordError(span, error);
+      span.end();
       throw error;
     }
     const held = holdUntilBody(response, options.signal);
     const active = context.active();
     let finished = false;
-    const finish = (body: string, error?: unknown): void => {
-      if (finished) {
-        return;
-      }
+    const finish = (error?: unknown): void => {
+      if (finished) return;
       finished = true;
       context.with(active, () => {
         if (error) {
-          failSpan(span, error);
+          recordError(span, error);
+          span.end();
           return;
         }
-        const text = body.slice(0, PREVIEW_LIMIT);
-        const preview = `${response.status} ${text}`.trim().slice(0, PREVIEW_LIMIT);
-        mlflow.updateCurrentTrace({ responsePreview: preview });
-        span.setOutputs({ status: response.status, body: text });
+        span.setAttribute("http.response.status_code", response.status);
+        if (response.status >= 500) {
+          span.setStatus({ code: SpanStatusCode.ERROR, message: String(response.status) });
+        } else {
+          span.setStatus({ code: SpanStatusCode.OK });
+        }
         span.end();
       });
     };
     void held.done.then(
-      (body) => finish(body),
-      (error: unknown) => finish("", error),
+      () => finish(),
+      (error: unknown) => finish(error),
     );
     return held.response;
   });
@@ -194,6 +186,39 @@ export function holdUntilBody(response: Response, signal?: AbortSignal): { respo
   };
 }
 
+function recordUsage(span: Span, usage: TokenUsage | undefined): void {
+  if (!usage) return;
+  span.setAttribute("gen_ai.usage.input_tokens", usage.input_tokens);
+  span.setAttribute("gen_ai.usage.output_tokens", usage.output_tokens);
+  span.setAttribute("gen_ai.usage.total_tokens", usage.total_tokens);
+}
+
+/** Cache and ok are operational. Food, prompts, and answers are not. */
+function recordSafe(span: Span, outputs: unknown): void {
+  if (!outputs || typeof outputs !== "object" || Array.isArray(outputs)) return;
+  const record = outputs as Record<string, unknown>;
+  if (record.cache === "hit" || record.cache === "miss" || record.cache === "inflight") {
+    span.setAttribute("taco.cache", record.cache);
+  }
+  if (typeof record.ok === "boolean") {
+    span.setAttribute("taco.ok", record.ok);
+  }
+}
+
+function httpFields(name: string): Attributes {
+  const match = /^(GET|POST|PUT|PATCH|DELETE|HEAD) (\S+)$/.exec(name);
+  const method = match?.[1];
+  const path = match?.[2];
+  if (!method || !path) return {};
+  return { "http.request.method": method, "url.path": path };
+}
+
+function recordError(span: Span, error: unknown): void {
+  const message = error instanceof Error ? error.message : "Request failed";
+  span.recordException(error instanceof Error ? error : new Error(message));
+  span.setStatus({ code: SpanStatusCode.ERROR, message: message.slice(0, 200) });
+}
+
 function drainPreview(stream: ReadableStream<Uint8Array>, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve) => {
     const reader = stream.getReader();
@@ -201,9 +226,7 @@ function drainPreview(stream: ReadableStream<Uint8Array>, signal?: AbortSignal):
     let preview = "";
     let settled = false;
     const finish = (): void => {
-      if (settled) {
-        return;
-      }
+      if (settled) return;
       settled = true;
       signal?.removeEventListener("abort", onAbort);
       resolve(preview.slice(0, PREVIEW_LIMIT));
@@ -236,15 +259,4 @@ function drainPreview(stream: ReadableStream<Uint8Array>, signal?: AbortSignal):
     };
     void pump();
   });
-}
-
-function failSpan(span: RequestSpan, error: unknown): void {
-  const message = error instanceof Error ? error.message : "Request failed";
-  span.recordException(error instanceof Error ? error : new Error(message));
-  span.setStatus("ERROR", message);
-  span.end();
-}
-
-async function loadCore(): Promise<typeof import("@mlflow/core")> {
-  return import("@mlflow/core");
 }

@@ -1,0 +1,7 @@
+[Build]
+File=%h/source/taco/Dockerfile
+SetWorkingDirectory=%h/source/taco
+ImageTag=localhost/health-tracker:latest
+
+[Service]
+TimeoutStartSec=900

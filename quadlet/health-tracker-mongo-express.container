@@ -1,0 +1,18 @@
+[Unit]
+Description=Taco mongo-express
+Requires=health-tracker-network.service health-tracker-mongodb.service
+After=health-tracker-network.service health-tracker-mongodb.service
+
+[Container]
+ContainerName=health-tracker-mongo-express
+Image=docker.io/library/mongo-express:1
+Network=health-tracker.network
+PublishPort=127.0.0.1:8081:8081
+EnvironmentFile=%t/health-tracker-mongo-express.env
+
+[Service]
+ExecStartPre=/bin/sh %h/source/taco/quadlet/render-env.sh express %t/health-tracker-mongo-express.env
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

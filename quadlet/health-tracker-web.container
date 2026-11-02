@@ -1,0 +1,33 @@
+[Unit]
+Description=Taco
+Requires=health-tracker-web-build.service health-tracker-mongodb.service health-tracker-network.service
+After=health-tracker-web-build.service health-tracker-mongodb.service health-tracker-network.service
+
+[Container]
+ContainerName=health-tracker-web
+Image=localhost/health-tracker:latest
+Network=health-tracker.network
+# Prompt registration uses the shared MLflow server's DNS name on this network.
+# Traces do not. They leave through host.containers.internal to Alloy.
+Network=traefik
+NetworkAlias=web
+PublishPort=127.0.0.1:3001:3001
+EnvironmentFile=%t/health-tracker-web.env
+PodmanArgs=--init
+# The host /etc/hosts file maps mlflow to 127.0.0.1 for the browser. Podman
+# copies that file into the container, which hides the traefik DNS name.
+PodmanArgs=--hosts-file=none
+HealthCmd=node -e "fetch('http://127.0.0.1:3001/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+HealthInterval=15s
+HealthTimeout=5s
+HealthRetries=5
+HealthStartPeriod=20s
+Notify=healthy
+
+[Service]
+ExecStartPre=/bin/sh %h/source/taco/quadlet/render-env.sh web %t/health-tracker-web.env
+Restart=on-failure
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target

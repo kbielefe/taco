@@ -1,0 +1,30 @@
+[Unit]
+Description=Taco MongoDB
+Requires=health-tracker-network.service
+After=health-tracker-network.service
+
+[Container]
+ContainerName=health-tracker-mongodb
+Image=docker.io/library/mongo:8
+Network=health-tracker.network
+NetworkAlias=mongodb
+PublishPort=127.0.0.1:27017:27017
+Volume=health-tracker_mongodb_data:/data/db
+Volume=%h/source/taco/mongo-init:/docker-entrypoint-initdb.d:ro
+EnvironmentFile=%t/health-tracker-mongodb.env
+# $$ survives into the generated unit so systemd does not eat the variable.
+# The container shell then reads the Mongo image's own environment.
+HealthCmd=/bin/sh -c "mongosh -u \"$$MONGO_INITDB_ROOT_USERNAME\" -p \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --quiet --eval \"db.adminCommand('ping')\""
+HealthInterval=10s
+HealthTimeout=5s
+HealthRetries=5
+HealthStartPeriod=20s
+Notify=healthy
+
+[Service]
+ExecStartPre=/bin/sh %h/source/taco/quadlet/render-env.sh mongodb %t/health-tracker-mongodb.env
+Restart=on-failure
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

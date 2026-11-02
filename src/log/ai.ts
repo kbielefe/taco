@@ -94,6 +94,7 @@ export class XaiFoodLogAi implements FoodLogAi {
       {
         name: "parse meal",
         spanType: "LLM",
+        model: this.model,
         inputs: { messages: messages(prompt.text, query) },
         links: [prompt],
       },
@@ -112,6 +113,7 @@ export class XaiFoodLogAi implements FoodLogAi {
       {
         name: "select match",
         spanType: "LLM",
+        model: this.model,
         inputs: { messages: messages(prompt.text, user) },
         links: [prompt],
       },
