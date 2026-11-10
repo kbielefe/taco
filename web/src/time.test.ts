@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eatingDayFraction } from "./time.js";
+import { eatingDayFraction, formatAgo } from "./time.js";
 
 function at(hour: number, minute: number): Date {
   return new Date(2026, 9, 20, hour, minute, 0);
@@ -19,5 +19,21 @@ describe("eatingDayFraction", () => {
 
   it("is halfway at 3:15 pm", () => {
     expect(eatingDayFraction(at(15, 15))).toBeCloseTo(0.5);
+  });
+});
+
+describe("formatAgo", () => {
+  const now = new Date(2026, 10, 9, 18, 0, 0);
+
+  it("says how many days ago a saved graph was made", () => {
+    expect(formatAgo(new Date(2026, 10, 7, 9, 0, 0), now)).toBe("2 days ago");
+    expect(formatAgo(new Date(2026, 10, 8, 12, 0, 0), now)).toBe("1 day ago");
+  });
+
+  it("uses hours on the same day, and a year at the cache limit", () => {
+    expect(formatAgo(new Date(2026, 10, 9, 15, 0, 0), now)).toBe("3 hours ago");
+    expect(formatAgo(new Date(2026, 10, 9, 17, 59, 40), now)).toBe("just now");
+    expect(formatAgo(new Date(2025, 10, 9, 18, 0, 0), now)).toBe("1 year ago");
+    expect(formatAgo(new Date(2026, 10, 9, 19, 0, 0), now)).toBe("just now");
   });
 });

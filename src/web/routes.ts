@@ -16,9 +16,11 @@ import type { DataCatalog } from "../mcp/catalog.js";
 import { handleMcpRequest } from "../mcp/http.js";
 import { CATALOG } from "../ask/catalog.js";
 import { createXaiAskModel, runAsk, type AskModel } from "../ask/agent.js";
+import type { GraphCache } from "../ask/graphs.js";
 import type { PromptBook } from "../mlflow/prompts.js";
 import { AskConfigError, AskFailedError } from "../ask/errors.js";
 import { parseAskRequest } from "../ask/request.js";
+import type { A2uiMessage } from "../ask/validate.js";
 import { createSyncHub, type SyncHub, type SyncTopic } from "./sync.js";
 import { traceRequest } from "./trace.js";
 
@@ -63,6 +65,8 @@ export interface AppDeps {
   /** Ask model. Tests inject this. The default calls xAI. */
   askModel?: AskModel;
   prompts?: PromptBook;
+  /** Shown Ask charts. When omitted, the saved-graph menu stays empty. */
+  graphCache?: GraphCache;
 }
 
 export function createApp({
@@ -74,6 +78,7 @@ export function createApp({
   data,
   askModel,
   prompts,
+  graphCache,
 }: AppDeps): Hono {
   const presentMeal = async (entry: FoodLogEntry): Promise<MealJson> => {
     const fit = corrections ? await corrections.current() : null;
@@ -357,6 +362,27 @@ export function createApp({
     return c.json(CATALOG);
   });
 
+  app.get("/api/ask/graphs", async (c) => {
+    c.header("Cache-Control", "no-store");
+    const graphs = (await graphCache?.list()) ?? [];
+    return c.json({
+      graphs: graphs.map((graph) => ({
+        id: graph.id,
+        caption: graph.caption,
+        createdAt: graph.createdAt.toISOString(),
+      })),
+    });
+  });
+
+  app.get("/api/ask/graphs/:id", async (c) => {
+    c.header("Cache-Control", "no-store");
+    const graph = await graphCache?.get(c.req.param("id"));
+    if (!graph) {
+      return c.json({ error: { message: "That graph is no longer saved." } }, 404);
+    }
+    return c.json({ id: graph.id, caption: graph.caption, messages: graph.messages });
+  });
+
   app.post("/api/ask", async (c) => {
     const body = await readJson(c);
     if (!body) {
@@ -385,6 +411,7 @@ export function createApp({
     c.header("Cache-Control", "no-cache");
     c.header("X-Accel-Buffering", "no");
     return stream(c, async (out) => {
+      const shown: A2uiMessage[] = [];
       try {
         await runAsk({
           question: request.question,
@@ -395,17 +422,28 @@ export function createApp({
           model,
           ...(prompts ? { prompts } : {}),
           emit: async (event) => {
+            if (event.type === "a2ui") {
+              shown.push(event.message);
+            }
             await out.writeln(JSON.stringify(event));
           },
         });
-        await out.writeln(JSON.stringify({ type: "done" }));
       } catch (error) {
         const mapped = askHttpError(error);
         if (mapped.status === 500) {
           console.error(error);
         }
         await out.writeln(JSON.stringify({ type: "error", error: { message: mapped.message }, status: mapped.status }));
+        return;
       }
+      if (graphCache && shown.length > 0) {
+        try {
+          await graphCache.remember(shown);
+        } catch (error) {
+          console.error(error);
+        }
+      }
+      await out.writeln(JSON.stringify({ type: "done" }));
     });
   });
 

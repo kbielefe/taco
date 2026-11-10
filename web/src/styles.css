@@ -448,6 +448,7 @@ body::before {
 #meal,
 #kind,
 #ask-question,
+#ask-graphs,
 #log-button,
 #journal-log,
 #ask-button,
@@ -462,6 +463,7 @@ body::before {
 #meal,
 #kind,
 #ask-question,
+#ask-graphs,
 .text-input,
 .draft select {
   width: 100%;
@@ -479,6 +481,11 @@ body::before {
 #kind[aria-invalid="true"],
 #ask-question[aria-invalid="true"] {
   border-color: var(--danger);
+}
+
+#ask-graphs {
+  cursor: pointer;
+  max-width: 100%;
 }
 
 #log-button,
@@ -1134,6 +1141,7 @@ button.log-open {
   #meal,
   #kind,
   #ask-question,
+  #ask-graphs,
   #log-button,
   #journal-log,
   #ask-button {

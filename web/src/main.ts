@@ -391,6 +391,9 @@ function show(view: View): void {
   if (view === "journal") {
     void journal.load();
   }
+  if (view === "ask") {
+    void askPage.loadGraphs();
+  }
 }
 
 for (const link of viewLinks) {
@@ -478,7 +481,7 @@ function debounce(run: () => void): () => void {
 }
 
 const journal = mountJournal();
-mountAsk();
+const askPage = mountAsk();
 
 const syncFood = debounce(() => {
   if (!mealsReady || viewFood.hidden) {

@@ -323,6 +323,53 @@ export async function deleteJournalEntry(id: string): Promise<void> {
   }
 }
 
+export interface SavedGraph {
+  id: string;
+  caption: string;
+  createdAt: string;
+}
+
+export interface SavedGraphDetail {
+  id: string;
+  caption: string;
+  messages: unknown[];
+}
+
+export async function fetchSavedGraphs(): Promise<SavedGraph[]> {
+  const response = await fetch("/api/ask/graphs", { cache: "no-store" });
+  if (!response.ok) {
+    throw await readError(response);
+  }
+  const body = (await response.json()) as { graphs?: unknown };
+  if (!Array.isArray(body.graphs)) {
+    return [];
+  }
+  const graphs: SavedGraph[] = [];
+  for (const item of body.graphs) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const record = item as { id?: unknown; caption?: unknown; createdAt?: unknown };
+    if (typeof record.id !== "string" || typeof record.caption !== "string" || typeof record.createdAt !== "string") {
+      continue;
+    }
+    graphs.push({ id: record.id, caption: record.caption, createdAt: record.createdAt });
+  }
+  return graphs;
+}
+
+export async function fetchSavedGraph(id: string): Promise<SavedGraphDetail> {
+  const response = await fetch(`/api/ask/graphs/${encodeURIComponent(id)}`, { cache: "no-store" });
+  if (!response.ok) {
+    throw await readError(response);
+  }
+  const body = (await response.json()) as { id?: unknown; caption?: unknown; messages?: unknown };
+  if (typeof body.id !== "string" || typeof body.caption !== "string" || !Array.isArray(body.messages)) {
+    throw new ApiError("That graph is no longer saved.", response.status);
+  }
+  return { id: body.id, caption: body.caption, messages: body.messages };
+}
+
 export async function fetchSuggestions(query: string): Promise<Suggestion[]> {
   const response = await fetch(`/api/suggestions?${new URLSearchParams({ q: query })}`);
   if (!response.ok) {

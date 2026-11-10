@@ -2,9 +2,12 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { ASK_GRAPH_CACHE_SOURCE, GraphCache } from "../ask/graphs.js";
 import { connectCorrectionRunner } from "../correct/run.js";
+import { MongoCacheStore } from "../fdc/cache.js";
 import { createJournal } from "../journal/journal.js";
 import { createFoodLogger } from "../log/logger.js";
+import { CACHE_COLLECTION } from "../log/types.js";
 import { PromptBook } from "../mlflow/prompts.js";
 import { startMlflow } from "../mlflow/start.js";
 import { mongoCatalog } from "../mcp/mongo.js";
@@ -31,12 +34,16 @@ const corrections = await connectCorrectionRunner({ logger, journal }).catch(asy
   throw error;
 });
 const healthDb = logger.healthDb();
+const graphCache = healthDb
+  ? new GraphCache(await MongoCacheStore.connect(healthDb, CACHE_COLLECTION, ASK_GRAPH_CACHE_SOURCE))
+  : undefined;
 const app = createApp({
   logger,
   journal,
   corrections,
   prompts,
   ...(healthDb ? { data: mongoCatalog(healthDb) } : {}),
+  ...(graphCache ? { graphCache } : {}),
 });
 corrections.schedule();
 await mlflow.ready;

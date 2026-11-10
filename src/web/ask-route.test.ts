@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CATALOG_ID } from "../ask/catalog.js";
 import type { AskModel } from "../ask/agent.js";
 import { AskFailedError } from "../ask/errors.js";
+import { GraphCache } from "../ask/graphs.js";
 import { MemoryCacheStore } from "../fdc/cache.js";
 import { Journal } from "../journal/journal.js";
 import { MemoryJournalStore } from "../journal/store.js";
@@ -17,7 +18,7 @@ const data: DataCatalog = {
   indexes: async () => [],
 };
 
-function appFor(options: { data?: DataCatalog; model?: AskModel; env?: NodeJS.ProcessEnv } = {}) {
+function appFor(options: { data?: DataCatalog; model?: AskModel; env?: NodeJS.ProcessEnv; graphCache?: GraphCache } = {}) {
   const logger = new FoodLogger({
     fdc: {
       searchFoods: async () => ({ foods: [] }),
@@ -42,7 +43,51 @@ function appFor(options: { data?: DataCatalog; model?: AskModel; env?: NodeJS.Pr
     env: options.env ?? {},
     ...(options.data ? { data: options.data } : {}),
     ...(options.model ? { askModel: options.model } : {}),
+    ...(options.graphCache ? { graphCache: options.graphCache } : {}),
   });
+}
+
+function chartMessages(title: string): unknown[] {
+  return [
+    { version: "v0.9", createSurface: { surfaceId: "answer", catalogId: CATALOG_ID } },
+    {
+      version: "v0.9",
+      updateComponents: {
+        surfaceId: "answer",
+        components: [
+          {
+            id: "root",
+            component: "LineChart",
+            title,
+            unit: "days",
+            series: [{ name: "Days", points: [{ label: "Mon", value: 2 }] }],
+          },
+        ],
+      },
+    },
+  ];
+}
+
+function chartThenText(title: string): AskModel {
+  let step = 0;
+  return {
+    async create() {
+      step += 1;
+      if (step === 1) {
+        return {
+          output: [
+            {
+              type: "function_call",
+              name: "show",
+              call_id: "show-1",
+              arguments: JSON.stringify({ messages: chartMessages(title) }),
+            },
+          ],
+        };
+      }
+      return { output: [{ type: "message", content: [{ type: "output_text", text: "Shown." }] }] };
+    },
+  };
 }
 
 function post(app: ReturnType<typeof createApp>, body: unknown) {
@@ -99,6 +144,82 @@ describe("ask HTTP API", () => {
     expect(lines).toEqual([
       { type: "error", error: { message: "Couldn't answer that. Try again in a moment." }, status: 422 },
     ]);
+  });
+
+  it("saves a shown chart and lists saved graphs newest first", async () => {
+    const graphCache = new GraphCache(new MemoryCacheStore());
+    const first = await post(appFor({ data, model: chartThenText("Weight"), graphCache }), {
+      question: "Weight this month?",
+      timeZone: "UTC",
+    });
+    expect(first.status).toBe(200);
+    await first.text();
+    const second = await post(appFor({ data, model: chartThenText("Migraines per week"), graphCache }), {
+      question: "Migraines per week?",
+      timeZone: "UTC",
+    });
+    await second.text();
+
+    const listed = await appFor({ graphCache }).request("/api/ask/graphs");
+    expect(listed.status).toBe(200);
+    expect(listed.headers.get("cache-control")).toBe("no-store");
+    const body = (await listed.json()) as { graphs: { id: string; caption: string; createdAt: string }[] };
+    expect(body.graphs.map((graph) => graph.caption)).toEqual(["Migraines per week", "Weight"]);
+    const newest = body.graphs[0];
+    const older = body.graphs[1];
+    expect(newest).toBeTruthy();
+    expect(older).toBeTruthy();
+    expect(Date.parse(newest?.createdAt ?? "")).toBeGreaterThan(Date.parse(older?.createdAt ?? ""));
+
+    const detail = await appFor({ graphCache }).request(`/api/ask/graphs/${newest?.id}`);
+    expect(detail.status).toBe(200);
+    const saved = (await detail.json()) as { caption: string; messages: unknown[] };
+    expect(saved.caption).toBe("Migraines per week");
+    expect(JSON.stringify(saved.messages)).toContain("Migraines per week");
+  });
+
+  it("does not save a prose answer or a chart from a failed answer", async () => {
+    const graphCache = new GraphCache(new MemoryCacheStore());
+    await (await post(appFor({ data, model: prose, graphCache }), { question: "Calories today?", timeZone: "UTC" })).text();
+    const failing: AskModel = {
+      async create() {
+        throw new AskFailedError();
+      },
+    };
+    await (await post(appFor({ data, model: failing, graphCache }), { question: "Weight?", timeZone: "UTC" })).text();
+    let step = 0;
+    const shownThenFailed: AskModel = {
+      async create() {
+        step += 1;
+        if (step === 1) {
+          return {
+            output: [
+              {
+                type: "function_call",
+                name: "show",
+                call_id: "show-1",
+                arguments: JSON.stringify({ messages: chartMessages("Migraines per week") }),
+              },
+            ],
+          };
+        }
+        throw new AskFailedError();
+      },
+    };
+    await (await post(appFor({ data, model: shownThenFailed, graphCache }), { question: "Migraines?", timeZone: "UTC" })).text();
+    const listed = await appFor({ graphCache }).request("/api/ask/graphs");
+    expect(await listed.json()).toEqual({ graphs: [] });
+  });
+
+  it("says a missing graph is no longer saved", async () => {
+    const graphCache = new GraphCache(new MemoryCacheStore());
+    const app = appFor({ graphCache });
+    expect(await (await app.request("/api/ask/graphs")).json()).toEqual({ graphs: [] });
+    const missing = await app.request("/api/ask/graphs/not-an-id");
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: { message: "That graph is no longer saved." } });
+    const absent = await appFor().request("/api/ask/graphs/00000000-0000-4000-8000-000000000001");
+    expect(absent.status).toBe(404);
   });
 
   it("serves the chart catalog", async () => {

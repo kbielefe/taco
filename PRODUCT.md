@@ -33,7 +33,7 @@ Food, Journal, and Ask show today. The browser sends local midnight. The server 
 
 Food starts from "What did you eat?" Journal starts from "What do you want to record?" A journal entry may fill any subset of that kind's fields. The first field can fill the rest from the last time that same value was used.
 
-Ask is a conversation in the open browser tab. The transcript is not stored. Refresh clears it.
+Ask is a conversation in the open browser tab. The transcript is not stored. Refresh clears it. A chart that was shown is kept for a year and can be opened again from the Ask page.
 
 The deployed site is https://health.bielefeldt.dev.
 
@@ -66,6 +66,7 @@ On Food and Journal, a photo sits only outside the content column. The column it
 
 - Answers come from the owner's food log and journal.
 - A change over time is a chart, even when the question does not ask for one. The prose is at most a short sentence and does not restate the chart's numbers. A single fact, a yes or no, or a non-numeric list stays text.
+- A chart that was shown is saved for a year. The Ask page lists those charts newest first. Each line is a short caption and how long ago it was made, such as "Migraines per week    2 days ago". Choosing one shows that chart again. The conversation still clears on refresh.
 
 ### Access
 

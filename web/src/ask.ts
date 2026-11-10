@@ -1,8 +1,14 @@
 import { MAX_TURN } from "../../src/ask/request.js";
 import { releaseSurface, renderSurface } from "./a2ui.js";
-import { localTimeZone } from "./time.js";
+import { fetchSavedGraph, fetchSavedGraphs, type SavedGraph } from "./api.js";
+import { formatAgo, localTimeZone } from "./time.js";
 
 const MAX_HISTORY = 20;
+
+/** Menu line for a saved graph, such as "Migraines per week    2 days ago". */
+export function savedGraphLabel(caption: string, createdAt: Date, now = new Date()): string {
+  return `${caption}    ${formatAgo(createdAt, now)}`;
+}
 
 /** The next turn's memory of this answer: the sentence, then the chart the page drew. */
 export function assistantMemory(text: string, surface: ParentNode): string {
@@ -50,7 +56,7 @@ function required<T extends Element>(value: T | null, name: string): T {
   return value;
 }
 
-export function mountAsk(): void {
+export function mountAsk(): { loadGraphs: () => Promise<void> } {
   const form = required(document.querySelector<HTMLFormElement>("#ask-form"), "ask-form");
   const input = required(document.querySelector<HTMLInputElement>("#ask-question"), "ask-question");
   const button = required(document.querySelector<HTMLButtonElement>("#ask-button"), "ask-button");
@@ -58,6 +64,8 @@ export function mountAsk(): void {
   const statusEl = required(document.querySelector<HTMLParagraphElement>("#ask-status"), "ask-status");
   const emptyEl = required(document.querySelector<HTMLParagraphElement>("#ask-empty"), "ask-empty");
   const log = required(document.querySelector<HTMLElement>("#ask-log"), "ask-log");
+  const saved = required(document.querySelector<HTMLElement>("#ask-saved"), "ask-saved");
+  const select = required(document.querySelector<HTMLSelectElement>("#ask-graphs"), "ask-graphs");
   const history: AskTurn[] = [];
   let asking = false;
 
@@ -73,8 +81,17 @@ export function mountAsk(): void {
 
   const setBusy = (busy: boolean): void => {
     button.disabled = busy;
+    select.disabled = busy;
     form.setAttribute("aria-busy", busy ? "true" : "false");
   };
+
+  select.addEventListener("change", () => {
+    const id = select.value;
+    if (!id || asking) {
+      return;
+    }
+    void showSaved(id);
+  });
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -119,6 +136,7 @@ export function mountAsk(): void {
       });
       history.push({ role: "user", content: question }, { role: "assistant", content: assistantMemory(text, surface) });
       statusEl.textContent = "";
+      await loadGraphs();
     } catch (error) {
       releaseSurface(surface);
       user.remove();
@@ -146,6 +164,63 @@ export function mountAsk(): void {
     node.append(paragraph);
     return node;
   }
+
+  async function loadGraphs(): Promise<void> {
+    try {
+      paintGraphs(await fetchSavedGraphs());
+    } catch {
+      // A failed refresh leaves the menu as it was. Asking still works.
+    }
+  }
+
+  function paintGraphs(graphs: SavedGraph[]): void {
+    const sorted = graphs
+      .filter((graph) => graph.id.trim() !== "" && graph.caption.trim() !== "" && !Number.isNaN(Date.parse(graph.createdAt)))
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+    select.replaceChildren();
+    if (sorted.length === 0) {
+      saved.hidden = true;
+      return;
+    }
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Choose a graph";
+    select.append(placeholder);
+    for (const graph of sorted) {
+      const option = document.createElement("option");
+      option.value = graph.id;
+      option.textContent = savedGraphLabel(graph.caption.trim(), new Date(graph.createdAt));
+      select.append(option);
+    }
+    saved.hidden = false;
+    select.value = "";
+  }
+
+  async function showSaved(id: string): Promise<void> {
+    asking = true;
+    setBusy(true);
+    setError("");
+    try {
+      const graph = await fetchSavedGraph(id);
+      emptyEl.hidden = true;
+      const assistant = document.createElement("article");
+      assistant.className = "ask-turn ask-assistant";
+      const surface = document.createElement("div");
+      surface.className = "ask-surface";
+      assistant.append(surface);
+      log.append(assistant);
+      renderSurface(surface, graph.messages);
+      assistant.scrollIntoView({ block: "nearest" });
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "That graph is no longer saved.");
+    } finally {
+      asking = false;
+      setBusy(false);
+      select.value = "";
+    }
+  }
+
+  return { loadGraphs };
 }
 
 async function streamAsk(question: string, history: AskTurn[], handlers: AskHandlers): Promise<void> {
